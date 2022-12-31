@@ -1,0 +1,6 @@
+[submodule "python-pytorch-font-renderer"]
+	path = python-pytorch-font-renderer
+	url = https://github.com/theAdamColton/python-pytorch-font-renderer
+[submodule "ascii-dataset"]
+	path = ascii-dataset
+	url = https://github.com/theAdamColton/ascii-dataset
