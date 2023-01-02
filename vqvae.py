@@ -186,5 +186,5 @@ class VQ_VAE(pl.LightningModule):
 
     def configure_optimizers(self):
         return torch.optim.Adam(
-            (*self.encoder.parameters(), *self.decoder.parameters()), lr=self.lr
+            (*self.encoder.parameters(), *self.decoder.parameters(), *self.vq_embedding.embedding.parameters()), lr=self.lr
         )

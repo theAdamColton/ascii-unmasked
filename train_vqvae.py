@@ -191,7 +191,7 @@ if __name__ in {"__main__", "__console__"}:
     )
 
     torchinfo.summary(vqvae.encoder, input_size=(7, 95, 64, 64))
-    torchinfo.summary(vqvae.decoder, input_size=(7, 256, 4, 4))
+    torchinfo.summary(vqvae.decoder, input_size=(7, 256, 32, 32))
 
     if not args.load:
         trainer.fit(
