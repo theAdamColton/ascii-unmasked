@@ -107,7 +107,7 @@ def get_training_args():
         "--validation-prop", dest="validation_prop", default=0.0, type=float
     )
     parser.add_argument(
-        "--validation-every", dest="validation_every", default=8, type=int
+        "--validation-every", dest="validation_every", default=5, type=int
     )
 
     parser.add_argument(
@@ -162,7 +162,6 @@ if __name__ in {"__main__", "__console__"}:
         batch_size=args.batch_size,
     )
 
-
     dt_string = datetime.datetime.now().strftime("%d-%m-%Y_%H-%M")
     dirpath = "ckpt/{}checkpoint/{}".format(args.run_name, dt_string)
     logger = pl.loggers.TensorBoardLogger(dirpath)
@@ -170,8 +169,8 @@ if __name__ in {"__main__", "__console__"}:
         dirpath=dirpath,
         monitor="t_l",
         save_last=True,
-        every_n_epochs=2,
         save_top_k=2,
+        save_on_train_epoch_end=True,
     )
     os.makedirs(dirpath, exist_ok=True)
     with open(os.path.join(dirpath, "args.json"), "w") as f:
