@@ -11,7 +11,7 @@ class Conv2dDownscale(nn.Module):
         super().__init__()
 
         stride = 2
-        zero_padding = kernel_size//2
+        zero_padding = kernel_size // 2
 
         self.layers = nn.Sequential(
             nn.Conv2d(
@@ -53,6 +53,7 @@ class Conv2dDoubleDownscale(nn.Module):
 
     def forward(self, x):
         return self.layers(x)
+
 
 class Conv2dBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=5):

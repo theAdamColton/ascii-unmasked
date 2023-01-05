@@ -11,6 +11,7 @@ import sys
 
 
 from vqvae import VQ_VAE
+from diffusion_transformer import DiffusionTransformer
 
 
 def get_training_args():
@@ -29,31 +30,11 @@ def get_training_args():
         default=20,
     )
 
-    # Loss coefficients
-    parser.add_argument(
-        "--ce-recon-loss-scale", dest="ce_recon_loss_scale", default=0.1, type=float
-    )
-    parser.add_argument(
-        "--ce-label-smoothing",
-        dest="ce_label_smoothing",
-        default=0.0,
-        type=float,
-        help="Label smoothing [0,1]: https://arxiv.org/pdf/1701.06548.pdf",
-    )
-    parser.add_argument("--vq-beta", dest="vq_beta", default=1, type=float)
-    parser.add_argument("--vq-k", dest="vq_k", default=512, type=int)
-    parser.add_argument("--vq-z-dim", dest="vq_z_dim", default=256, type=int)
-    parser.add_argument(
-        "--image-recon-loss-coeff",
-        dest="image_recon_loss_coeff",
-        default=1.0,
-        type=float,
-    )
     parser.add_argument("--print-every", "-p", dest="print_every", default=10, type=int)
     parser.add_argument(
         "--run-name",
         dest="run_name",
-        default="vqvae",
+        default="vqdiffusion",
     )
     parser.add_argument(
         "--log-name",
@@ -102,20 +83,25 @@ def get_training_args():
         type=int,
         help="Number of epochs",
     )
-    parser.add_argument("-l", "--load", dest="load", help="load models from directory")
+    parser.add_argument(
+        "--vq-vae-dir",
+        dest="vq_vae_dir",
+        type=str,
+        help="Directory to the vq vae model checkpoint",
+        required=True,
+    )
+    parser.add_argument(
+        "--vq-diff-dir",
+        dest="vq_diff_dir",
+        type=str,
+        help="Directory to the vq diffusion model checkpoint",
+    )
+
     parser.add_argument(
         "--validation-prop", dest="validation_prop", default=0.0, type=float
     )
     parser.add_argument(
         "--validation-every", dest="validation_every", default=5, type=int
-    )
-
-    parser.add_argument(
-        "--space-deemph",
-        dest="space_deemph",
-        default=1.0,
-        type=float,
-        help="The space character weight is divided by this number.",
     )
 
     parser.add_argument(
@@ -141,25 +127,6 @@ if __name__ in {"__main__", "__console__"}:
         device = torch.device("cuda")
     else:
         device = torch.device("cpu")
-
-    char_weights = torch.ones(95)
-    char_weights[0] = char_weights[0] / args.space_deemph
-
-    vqvae = VQ_VAE(
-        lr=args.learning_rate,
-        char_weights=char_weights,
-        label_smoothing=args.ce_label_smoothing,
-        ce_recon_loss_scale=args.ce_recon_loss_scale,
-        image_recon_loss_coeff=args.image_recon_loss_coeff,
-        gumbel_tau_r=args.gumbel_tau_r,
-        device=device,
-        kernel_size=3,
-        vq_beta=args.vq_beta,
-        vq_z_dim=args.vq_z_dim,
-        should_random_roll=not args.dont_augment_data,
-        validation_prop=args.validation_prop,
-        batch_size=args.batch_size,
-    )
 
     dt_string = datetime.datetime.now().strftime("%d-%m-%Y_%H-%M")
     dirpath = "ckpt/{}checkpoint/{}".format(args.run_name, dt_string)
@@ -188,13 +155,11 @@ if __name__ in {"__main__", "__console__"}:
         gradient_clip_val=1.0,
     )
 
+    vqvae = VQ_VAE.load_from_checkpoint(args.vq_vae_dir)
+    vqvae.eval()
+    vqdiff = DiffusionTransformer(32, 512, vqvae)
+
     torchinfo.summary(vqvae.encoder, input_size=(7, 95, 64, 64))
     torchinfo.summary(vqvae.decoder, input_size=(7, 256, 32, 32))
 
-    if not args.load:
-        trainer.fit(model=vqvae)
-    else:
-        trainer.fit(
-            model=vqvae,
-            ckpt_path=args.load,
-        )
+    trainer.fit(model=vqdiff)

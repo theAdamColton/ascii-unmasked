@@ -45,6 +45,7 @@ class VQ_VAE(pl.LightningModule):
 
         self.encoder = Encoder(kernel_size=kernel_size)
         self.decoder = Decoder(kernel_size=kernel_size)
+        self.vq_k = vq_k
         self.lr = lr
         self.ce_recon_loss_scale = ce_recon_loss_scale
         self.image_recon_loss_coeff = image_recon_loss_coeff
@@ -72,6 +73,12 @@ class VQ_VAE(pl.LightningModule):
 
         self.save_hyperparameters(ignore=["font_renderer"])
 
+    def get_z(self, x):
+        """
+        returns the z discrete space embedding
+        """
+        z_e_x = self.encoder(x)
+        
 
     def forward(self, x):
         """returns x_hat, z_e_x, z_q_x_st, z_q_z"""
@@ -84,7 +91,6 @@ class VQ_VAE(pl.LightningModule):
             x_hat_log, dim=1, tau=self.gumbel_tau, hard=True
         )
         return x_hat_gumbel, z_e_x, z_q_x_st, z_q_x
-
 
     def step(self, x, _):
         x_hat_gumbel, z_e_x, z_q_x_st, z_q_x = self.forward(x)
@@ -135,7 +141,9 @@ class VQ_VAE(pl.LightningModule):
             self.eval()
 
             # Reconstructs the item
-            x_hat_gumbel, z_e_x, z_q_x_st, z_q_x = self.forward(x.to(self.dtype).unsqueeze(0))
+            x_hat_gumbel, z_e_x, z_q_x_st, z_q_x = self.forward(
+                x.to(self.dtype).unsqueeze(0)
+            )
 
             # Renders images
             base_image = self.font_renderer.render(x.unsqueeze(0))
@@ -159,9 +167,7 @@ class VQ_VAE(pl.LightningModule):
         self.train()
 
     def train_dataloader(self):
-        dataset = AsciiArtDataset(
-            res=64, validation_prop=self.validation_prop
-        )
+        dataset = AsciiArtDataset(res=64, validation_prop=self.validation_prop)
         return DataLoader(
             dataset,
             batch_size=self.batch_size,
@@ -186,5 +192,10 @@ class VQ_VAE(pl.LightningModule):
 
     def configure_optimizers(self):
         return torch.optim.Adam(
-            (*self.encoder.parameters(), *self.decoder.parameters(), *self.vq_embedding.embedding.parameters()), lr=self.lr
+            (
+                *self.encoder.parameters(),
+                *self.decoder.parameters(),
+                *self.vq_embedding.embedding.parameters(),
+            ),
+            lr=self.lr,
         )
