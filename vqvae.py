@@ -34,7 +34,7 @@ class VQ_VAE(pl.LightningModule):
         kernel_size=3,
         vq_beta=1.0,
         vq_k=512,
-        vq_z_dim=128,
+        vq_z_dim=256,
         should_random_roll=True,
         random_roll_sigma=4.0,
         random_roll_max_roll=8.0,
@@ -42,6 +42,8 @@ class VQ_VAE(pl.LightningModule):
         batch_size=16,
     ):
         super().__init__()
+
+        assert vq_z_dim == 256
 
         self.encoder = Encoder(kernel_size=kernel_size)
         self.decoder = Decoder(kernel_size=kernel_size)
@@ -119,6 +121,8 @@ class VQ_VAE(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, _ = batch
+        if self.should_random_roll:
+            x = self.random_roll(x)
         loss, logs = self.step(x, batch_idx)
 
         self.log_dict(
