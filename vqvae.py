@@ -43,8 +43,6 @@ class VQ_VAE(pl.LightningModule):
     ):
         super().__init__()
 
-        assert vq_z_dim == 256
-
         self.encoder = Encoder(kernel_size=kernel_size)
         self.decoder = Decoder(kernel_size=kernel_size)
         self.vq_k = vq_k
