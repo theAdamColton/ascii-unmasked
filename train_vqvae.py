@@ -29,6 +29,13 @@ def get_training_args():
         default=20,
     )
 
+    parser.add_argument(
+            "--max-res",
+            dest="max_res",
+            default=64,
+            help="Maximum resolution the dataset will serve",
+            type=int)
+
     # Loss coefficients
     parser.add_argument(
         "--ce-recon-loss-scale", dest="ce_recon_loss_scale", default=0.1, type=float
@@ -159,6 +166,7 @@ if __name__ in {"__main__", "__console__"}:
         should_random_roll=not args.dont_augment_data,
         validation_prop=args.validation_prop,
         batch_size=args.batch_size,
+        max_res=args.max_res,
     )
 
     dt_string = datetime.datetime.now().strftime("%d-%m-%Y_%H-%M")
@@ -189,7 +197,7 @@ if __name__ in {"__main__", "__console__"}:
     )
 
     torchinfo.summary(vqvae.encoder, input_size=(7, 95, 64, 64))
-    torchinfo.summary(vqvae.decoder, input_size=(7, args.vq_z_dim, 32, 32))
+    #torchinfo.summary(vqvae.decoder, input_size=(7, args.vq_z_dim, 32, 32))
 
     if not args.load:
         trainer.fit(model=vqvae)

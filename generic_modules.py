@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class Conv2dDownscale(nn.Module):
@@ -81,7 +82,7 @@ class BilinearConvUpsample(nn.Module):
     Multiplies the resolution by 2
     """
 
-    def __init__(self, in_channels, out_channels, kernel_size=5, scale: float = 2.0):
+    def __init__(self, in_channels, out_channels, kernel_size=5):
         super().__init__()
 
         # This sets the zero_pad so that the conv2d layer will have
@@ -90,7 +91,6 @@ class BilinearConvUpsample(nn.Module):
         zero_pad = kernel_size // 2
 
         self.layers = nn.Sequential(
-            nn.Upsample(scale_factor=scale, mode="bilinear"),
             nn.Conv2d(
                 in_channels, out_channels, kernel_size, stride=1, padding=zero_pad
             ),
@@ -98,7 +98,8 @@ class BilinearConvUpsample(nn.Module):
             nn.BatchNorm2d(out_channels),
         )
 
-    def forward(self, x):
+    def forward(self, x, scale=2.0):
+        x = F.upsample(x, scale_factor=scale, mode="bilinear")
         return self.layers(x)
 
 

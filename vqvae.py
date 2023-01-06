@@ -37,9 +37,10 @@ class VQ_VAE(pl.LightningModule):
         vq_z_dim=256,
         should_random_roll=True,
         random_roll_sigma=4.0,
-        random_roll_max_roll=8.0,
+        random_roll_max_roll=10.0,
         validation_prop=0.01,
         batch_size=16,
+        max_res=128,
     ):
         super().__init__()
 
@@ -52,6 +53,7 @@ class VQ_VAE(pl.LightningModule):
         self.gumbel_tau_r = gumbel_tau_r
         self.validation_prop = validation_prop
         self.batch_size = batch_size
+        self.max_res = max_res
 
         # Codebook embedding
         self.vq_embedding = VQEmbedding(vq_k, vq_z_dim)
@@ -84,7 +86,7 @@ class VQ_VAE(pl.LightningModule):
         """returns x_hat, z_e_x, z_q_x_st, z_q_z"""
         z_e_x = self.encoder(x)
         z_q_x_st, z_q_x = self.vq_embedding.straight_through(z_e_x)
-        x_hat = self.decoder(z_q_x_st)
+        x_hat = self.decoder(z_q_x_st, x_res=x.shape[2])
         x_hat_log = F.log_softmax(x_hat, dim=1)
         self.gumbel_tau = max(0.5, math.exp(-self.gumbel_tau_r * self.current_epoch))
         x_hat_gumbel = F.gumbel_softmax(
@@ -169,18 +171,23 @@ class VQ_VAE(pl.LightningModule):
         self.train()
 
     def train_dataloader(self):
-        dataset = AsciiArtDataset(res=64, validation_prop=self.validation_prop)
+        dataset = AsciiArtDataset(
+                res=self.max_res,
+                ragged_batch_bin=True,
+                ragged_batch_bin_batch_size=self.batch_size,
+                validation_prop=self.validation_prop)
         return DataLoader(
             dataset,
             batch_size=self.batch_size,
-            shuffle=True,
+            shuffle=False,
             num_workers=8,
-            persistent_workers=True,
         )
 
     def validation_dataloader(self):
         validation_dataset = AsciiArtDataset(
-            res=64,
+            res=self.max_res,
+            ragged_batch_bin=True,
+            ragged_batch_bin_batch_size=self.batch_size,
             validation_prop=self.validation_prop,
             is_validation_dataset=self.validation_prop > 0.0,
         )
@@ -189,7 +196,6 @@ class VQ_VAE(pl.LightningModule):
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=8,
-            pin_memory=True,
         )
 
     def configure_optimizers(self):
