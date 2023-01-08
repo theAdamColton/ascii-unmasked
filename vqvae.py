@@ -84,6 +84,10 @@ class VQ_VAE(pl.LightningModule):
 
     def forward(self, x):
         """returns x_hat, z_e_x, z_q_x_st, z_q_z"""
+        x = x.squeeze(0)
+        x = x.to(self.dtype)
+       # import bpdb
+       # bpdb.set_trace()
         z_e_x = self.encoder(x)
         z_q_x_st, z_q_x = self.vq_embedding.straight_through(z_e_x)
         x_hat = self.decoder(z_q_x_st, x_res=x.shape[2])
@@ -121,6 +125,7 @@ class VQ_VAE(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, _ = batch
+        x = x.squeeze(0)
         if self.should_random_roll:
             x = self.random_roll(x)
         loss, logs = self.step(x, batch_idx)
@@ -146,7 +151,7 @@ class VQ_VAE(pl.LightningModule):
 
             # Reconstructs the item
             x_hat_gumbel, z_e_x, z_q_x_st, z_q_x = self.forward(
-                x.to(self.dtype).unsqueeze(0)
+                x.to(self.dtype).unsqueeze(0).unsqueeze(0)
             )
 
             # Renders images
@@ -178,9 +183,9 @@ class VQ_VAE(pl.LightningModule):
                 validation_prop=self.validation_prop)
         return DataLoader(
             dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=8,
+            batch_size=1,
+            shuffle=True,
+            num_workers=16,
         )
 
     def validation_dataloader(self):
@@ -193,7 +198,7 @@ class VQ_VAE(pl.LightningModule):
         )
         return DataLoader(
             validation_dataset,
-            batch_size=self.batch_size,
+            batch_size=1,
             shuffle=False,
             num_workers=8,
         )

@@ -194,6 +194,7 @@ if __name__ in {"__main__", "__console__"}:
         precision=16,
         amp_backend="native",
         gradient_clip_val=1.0,
+        accumulate_grad_batches=4,
     )
 
     torchinfo.summary(vqvae.encoder, input_size=(7, 95, 64, 64))
