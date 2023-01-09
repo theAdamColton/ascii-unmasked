@@ -1,6 +1,6 @@
 import torch
 import json
-from pytorch_lightning.callbacks import StochasticWeightAveraging, ModelCheckpoint
+from pytorch_lightning.callbacks import StochasticWeightAveraging, ModelCheckpoint, LearningRateMonitor
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import torchinfo
@@ -171,7 +171,8 @@ class MaskGitTrainer(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
-        return optimizer
+        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, min_lr=1e-9)
+        return {'optimizer':optimizer, 'lr_scheduler': lrs, 'monitor':'t_l'}
 
     def on_train_epoch_end(self):
         with torch.no_grad():
@@ -214,13 +215,14 @@ if __name__ in {"__main__", "__console__"}:
     trainer = pl.Trainer(
         max_epochs=args.n_epochs,
         accelerator="gpu" if device.type == "cuda" else "cpu",
-        callbacks=[StochasticWeightAveraging(swa_lrs=0.05), model_checkpoint],
+        callbacks=[StochasticWeightAveraging(swa_lrs=0.05), model_checkpoint, LearningRateMonitor()],
         check_val_every_n_epoch=args.validation_every,
         auto_lr_find=True,
         logger=logger,
         log_every_n_steps=10,
         precision=16,
         amp_backend="native",
+        accumulate_grad_batches=5,
     )
 
     vqvae = VQ_VAE.load_from_checkpoint(args.vq_vae_dir)
@@ -238,7 +240,7 @@ if __name__ in {"__main__", "__console__"}:
     maskgit = MaskGit(transformer)
     # torchinfo.summary(maskgit, input_size=(7, 16, 16))
 
-    maskgit_trainer = MaskGitTrainer(maskgit, vqvae, args.batch_size)
+    maskgit_trainer = MaskGitTrainer(maskgit, vqvae, args.batch_size, learning_rate=args.learning_rate)
     maskgit_trainer.to(torch.device("cuda"))
 
     if not args.maskgit_dir:

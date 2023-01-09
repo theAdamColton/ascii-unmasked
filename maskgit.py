@@ -266,7 +266,7 @@ class MaskGit(nn.Module):
         shape = (batch_size, seq_len)
 
         ids = torch.full(shape, self.mask_id, dtype=torch.long, device=device)
-        scores = torch.zeros(shape, dtype=torch.float32, device=device)
+        scores = torch.randn(shape, dtype=torch.float32, device=device).softmax(-1)
 
         starting_temperature = temperature
 
