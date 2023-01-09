@@ -75,19 +75,10 @@ class VQ_VAE(pl.LightningModule):
 
         self.save_hyperparameters(ignore=["font_renderer"])
 
-    def get_z(self, x):
-        """
-        returns the z discrete space embedding
-        """
-        z_e_x = self.encoder(x)
-        
-
     def forward(self, x):
         """returns x_hat, z_e_x, z_q_x_st, z_q_z"""
         x = x.squeeze(0)
         x = x.to(self.dtype)
-       # import bpdb
-       # bpdb.set_trace()
         z_e_x = self.encoder(x)
         z_q_x_st, z_q_x = self.vq_embedding.straight_through(z_e_x)
         x_hat = self.decoder(z_q_x_st, x_res=x.shape[2])
@@ -97,6 +88,13 @@ class VQ_VAE(pl.LightningModule):
             x_hat_log, dim=1, tau=self.gumbel_tau, hard=True
         )
         return x_hat_gumbel, z_e_x, z_q_x_st, z_q_x
+
+    def encode(self, x):
+        x = x.squeeze(0)
+        z_e_x = self.encoder(x)
+        indeces = self.vq_embedding.forward(z_e_x)
+
+        return indeces
 
     def step(self, x, _):
         x_hat_gumbel, z_e_x, z_q_x_st, z_q_x = self.forward(x)
@@ -177,10 +175,11 @@ class VQ_VAE(pl.LightningModule):
 
     def train_dataloader(self):
         dataset = AsciiArtDataset(
-                res=self.max_res,
-                ragged_batch_bin=True,
-                ragged_batch_bin_batch_size=self.batch_size,
-                validation_prop=self.validation_prop)
+            res=self.max_res,
+            ragged_batch_bin=True,
+            ragged_batch_bin_batch_size=self.batch_size,
+            validation_prop=self.validation_prop,
+        )
         return DataLoader(
             dataset,
             batch_size=1,
@@ -212,3 +211,17 @@ class VQ_VAE(pl.LightningModule):
             ),
             lr=self.lr,
         )
+
+    def get_encoded_fmap_size(self, image_size: int):
+        # 64 -> 16
+        return image_size // 4
+
+    def decode_from_ids(self, ids: torch.Tensor):
+        """
+        ids is B by Z by Z
+        returns B by 95 by Z*4 by Z*4
+        """
+        latent_res = ids.shape[1]
+        z_q = self.vq_embedding.embedding.weight[ids]
+        z_q = torch.movedim(z_q, -1, 1)
+        return self.decoder(z_q, x_res=latent_res * 4)

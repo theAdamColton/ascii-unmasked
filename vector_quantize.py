@@ -94,12 +94,6 @@ class VQEmbedding(nn.Module):
     def forward(self, z_e_x):
         """
         Maps the input latent codes to the continuous latent space via the embedding matrix.
-
-        Parameters:
-            z_e_x (torch.Tensor): A tensor of latent codes with shape (batch_size, H, W, K).
-
-        Returns:
-            torch.Tensor: A tensor of continuous latent codes with shape (batch_size, H, W, D).
         """
         z_e_x_ = z_e_x.permute(0, 2, 3, 1).contiguous()
         latents = VectorQuantization.apply(z_e_x_, self.embedding.weight)
@@ -109,14 +103,6 @@ class VQEmbedding(nn.Module):
         """
         Maps the input latent codes to the continuous latent space via the embedding matrix,
         and returns both the continuous latent codes and the quantized codes.
-
-        Parameters:
-            z_e_x (torch.Tensor): A tensor of latent codes with shape (batch_size, H, W, K).
-
-        Returns:
-            tuple: A tuple containing two elements:
-                torch.Tensor: A tensor of quantized latent codes with shape (batch_size, H, W, K).
-                torch.Tensor: A tensor of continuous latent codes with shape (batch_size, H, W, D).
         """
         z_e_x_ = z_e_x.permute(0, 2, 3, 1).contiguous()
         z_q_x_, indices = VectorQuantizationStraightThrough.apply(

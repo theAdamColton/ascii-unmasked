@@ -30,11 +30,12 @@ def get_training_args():
     )
 
     parser.add_argument(
-            "--max-res",
-            dest="max_res",
-            default=64,
-            help="Maximum resolution the dataset will serve",
-            type=int)
+        "--max-res",
+        dest="max_res",
+        default=64,
+        help="Maximum resolution the dataset will serve",
+        type=int,
+    )
 
     # Loss coefficients
     parser.add_argument(
@@ -56,7 +57,6 @@ def get_training_args():
         default=1.0,
         type=float,
     )
-    parser.add_argument("--print-every", "-p", dest="print_every", default=10, type=int)
     parser.add_argument(
         "--run-name",
         dest="run_name",
@@ -66,27 +66,6 @@ def get_training_args():
         "--log-name",
         dest="log_name",
         default="run",
-    )
-
-    # Dataset args
-    parser.add_argument(
-        "--datapath",
-        dest="datapath",
-        default=None,
-        help="Useful for memory-pinned data directories in /dev/shm/",
-    )
-    parser.add_argument(
-        "--n-workers",
-        dest="n_workers",
-        type=int,
-        default=4,
-        help="Number of dataset workers",
-    )
-    parser.add_argument(
-        "--dataset-to-gpu",
-        dest="dataset_to_gpu",
-        default=False,
-        action="store_true",
     )
 
     # Training args
@@ -198,7 +177,7 @@ if __name__ in {"__main__", "__console__"}:
     )
 
     torchinfo.summary(vqvae.encoder, input_size=(7, 95, 64, 64))
-    #torchinfo.summary(vqvae.decoder, input_size=(7, args.vq_z_dim, 32, 32))
+    # torchinfo.summary(vqvae.decoder, input_size=(7, args.vq_z_dim, 32, 32))
 
     if not args.load:
         trainer.fit(model=vqvae)

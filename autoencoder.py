@@ -45,8 +45,17 @@ class Decoder(nn.Module):
         z_res = z.shape[2]
         scale_factor1 = math.ceil(x_res / 2) / z_res
         scale_factor2 = x_res / math.ceil(x_res / 2)
-        #print(z_res, scale_factor1, scale_factor2)
-        return self.c5(self.c4(self.c3(self.bl2(self.c2(self.bl1(self.c1(z), scale=scale_factor1)),scale=scale_factor2))))
+        # print(z_res, scale_factor1, scale_factor2)
+        return self.c5(
+            self.c4(
+                self.c3(
+                    self.bl2(
+                        self.c2(self.bl1(self.c1(z), scale=scale_factor1)),
+                        scale=scale_factor2,
+                    )
+                )
+            )
+        )
 
 
 class Encoder(nn.Module):
