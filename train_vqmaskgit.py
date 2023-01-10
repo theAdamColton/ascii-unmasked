@@ -4,6 +4,7 @@ from pytorch_lightning.callbacks import StochasticWeightAveraging, ModelCheckpoi
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import torchinfo
+from random import randint
 import argparse
 import pytorch_lightning as pl
 import datetime
@@ -178,7 +179,7 @@ class MaskGitTrainer(pl.LightningModule):
         with torch.no_grad():
             self.eval()
             # Generates an image
-            ids = self.maskgit.generate(2, 16, temperature=1.0)
+            ids = self.maskgit.generate(2, randint(4, 20), temperature=1.0)
             ascii_tensors = self.vae.decode_from_ids(ids)
             ascii_tensors_log = F.log_softmax(ascii_tensors)
             ascii_tensors_gumbel = F.gumbel_softmax(ascii_tensors_log, dim=1)
@@ -215,14 +216,15 @@ if __name__ in {"__main__", "__console__"}:
     trainer = pl.Trainer(
         max_epochs=args.n_epochs,
         accelerator="gpu" if device.type == "cuda" else "cpu",
-        callbacks=[StochasticWeightAveraging(swa_lrs=0.05), model_checkpoint, LearningRateMonitor()],
+        callbacks=[StochasticWeightAveraging(swa_lrs=0.005), model_checkpoint, LearningRateMonitor()],
         check_val_every_n_epoch=args.validation_every,
         auto_lr_find=True,
         logger=logger,
         log_every_n_steps=10,
         precision=16,
         amp_backend="native",
-        accumulate_grad_batches=5,
+        accumulate_grad_batches=6,
+        gradient_clip_val=0.5,
     )
 
     vqvae = VQ_VAE.load_from_checkpoint(args.vq_vae_dir)

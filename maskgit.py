@@ -107,7 +107,7 @@ class Attention(nn.Module):
 
         sim = einsum("b h i d, b h j d -> b h i j", q, k)
 
-        attn = sim.softmax(dim=-1)
+        attn = F.softmax(sim, dim=-1)
         out = einsum("b h i j, b h j d -> b h i d", attn, v)
 
         out = rearrange(out, "b h n d -> b n (h d)")
