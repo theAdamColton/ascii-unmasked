@@ -2,9 +2,8 @@ import torch
 import json
 from pytorch_lightning.callbacks import StochasticWeightAveraging, ModelCheckpoint, LearningRateMonitor
 from torch.utils.data import DataLoader
-from einops import rearrange, repeat
+from einops import rearrange
 import torch.nn.functional as F
-import torchinfo
 from random import randint
 import argparse
 import pytorch_lightning as pl
@@ -82,6 +81,12 @@ def get_training_args():
         action="store_true",
         default=True,
     )
+    parser.add_argument(
+            "--find-lr",
+            dest="find_lr",
+            default=False,
+            action="store_true",
+            )
 
     return parser.parse_args()
 
@@ -182,14 +187,15 @@ class MaskGitTrainer(pl.LightningModule):
             id_res = randint(4, 16)
             ids = self.transformer.sample_good(id_res**2, T=18, batch_size=2)
             ids = ids.reshape(ids.shape[0], id_res, id_res)
-            bpdb.set_trace()
             ascii_tensors = self.vae.decode_from_ids(ids)
             ascii_tensors_log = F.log_softmax(ascii_tensors)
             ascii_tensors_gumbel = F.gumbel_softmax(ascii_tensors_log, dim=1)
 
-            for ascii_tensor in ascii_tensors_gumbel:
+            for i, ascii_tensor in enumerate(ascii_tensors_gumbel):
                 ascii_str = ascii_util.one_hot_embedded_matrix_to_string(ascii_tensor)
                 print(ascii_str)
+                if i+1 < ascii_tensors.shape[0]:
+                    print("-**-" * id_res)
 
         self.train()
 
@@ -226,7 +232,7 @@ if __name__ in {"__main__", "__console__"}:
         log_every_n_steps=10,
         precision=16,
         amp_backend="native",
-        accumulate_grad_batches=6,
+        accumulate_grad_batches=12,
         gradient_clip_val=0.5,
     )
 
@@ -236,8 +242,15 @@ if __name__ in {"__main__", "__console__"}:
     transformer = VQGANTransformer(512, 20**2, vqvae)
     # torchinfo.summary(maskgit, input_size=(7, 16, 16))
 
-    maskgit_trainer = MaskGitTrainer(transformer, vqvae, args.batch_size, learning_rate=args.learning_rate)
+    maskgit_trainer = MaskGitTrainer(transformer, vqvae, args.batch_size, learning_rate=args.learning_rate, validation_prop=args.validation_prop)
     maskgit_trainer.to(torch.device("cuda"))
+
+    if args.find_lr:
+        lr_finder = trainer.tuner.lr_find(maskgit_trainer)
+        new_lr = lr_finder.suggestion()
+        print(lr_finder.results)
+        print(new_lr)
+        maskgit_trainer.hparams.lr = new_lr
 
     if not args.maskgit_dir:
         trainer.fit(model=maskgit_trainer)

@@ -1,3 +1,6 @@
+"""
+Adapted from https://github.com/dome272/MaskGIT-pytorch/
+"""
 import math
 import torch
 import torch.nn as nn

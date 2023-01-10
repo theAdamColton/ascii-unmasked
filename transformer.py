@@ -1,3 +1,7 @@
+"""
+Adapted from https://github.com/dome272/MaskGIT-pytorch/
+"""
+
 import os
 import torch
 import torch.nn as nn
@@ -23,7 +27,7 @@ class VQGANTransformer(nn.Module):
         self.gamma = self.gamma_func("cosine")
 
         # Some reasonable defaults
-        self.transformer = BidirectionalTransformer(num_image_tokens, num_codebook_vectors, 768, 24, 3072)
+        self.transformer = BidirectionalTransformer(num_image_tokens, num_codebook_vectors, 512, 12, 1024)
         self.vqvae = vqvae
 
     def forward(self, z_indices):

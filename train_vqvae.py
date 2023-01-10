@@ -7,8 +7,6 @@ import argparse
 import pytorch_lightning as pl
 import datetime
 import os
-import sys
-
 
 from vqvae import VQ_VAE
 
