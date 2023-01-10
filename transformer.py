@@ -2,6 +2,7 @@ import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops import rearrange, repeat
 import numpy as np
 import math
 from bidirectional_transformer import BidirectionalTransformer
@@ -21,19 +22,14 @@ class VQGANTransformer(nn.Module):
 
         self.gamma = self.gamma_func("cosine")
 
-        self.transformer = BidirectionalTransformer(num_image_tokens, num_codebook_vectors, 64, 8, 256)
+        # Some reasonable defaults
+        self.transformer = BidirectionalTransformer(num_image_tokens, num_codebook_vectors, 768, 24, 3072)
         self.vqvae = vqvae
 
-    @torch.no_grad()
-    def encode_to_z(self, x):
-        bpdb.set_trace()
-        quant_z, _, (_, _, indices) = self.vqvae.encode(x)
-        indices = indices.view(quant_z.shape[0], -1)
-        return quant_z, indices
-
-    def forward(self, x):
-        _, z_indices = self.encode_to_z(x)
-        sos_tokens = torch.ones(x.shape[0], 1, dtype=torch.long, device=z_indices.device) * self.sos_token
+    def forward(self, z_indices):
+        z_indices = rearrange(z_indices, 'b ... -> b (...)')
+        #z_indices_one_hot 
+        sos_tokens = torch.ones(z_indices.shape[0], 1, dtype=torch.long, device=z_indices.device) * self.sos_token
 
         r = math.floor(self.gamma(np.random.uniform()) * z_indices.shape[1])
         sample = torch.rand(z_indices.shape, device=z_indices.device).topk(r, dim=1).indices
@@ -72,9 +68,9 @@ class VQGANTransformer(nn.Module):
         else:
             raise NotImplementedError
 
-    def create_input_tokens_normal(self, num, label=None):
+    def create_input_tokens_normal(self, batch_size, num_tokens, label=None):
         # Create blank masked tokens
-        blank_tokens = torch.ones((num, self.num_image_tokens), device="cuda")
+        blank_tokens = torch.ones((batch_size, num_tokens), device="cuda")
         masked_tokens = self.mask_token_id * blank_tokens
         return masked_tokens.to(torch.int64)
 
@@ -92,11 +88,11 @@ class VQGANTransformer(nn.Module):
         return masking
 
     @torch.no_grad()
-    def sample_good(self, inputs=None, num=1, T=11, mode="cosine"):
+    def sample_good(self, num_tokens, inputs=None, batch_size=1, T=11, mode="cosine"):
         # self.transformer.eval()
         N = self.num_image_tokens
         if inputs is None:
-            inputs = self.create_input_tokens_normal(num)
+            inputs = self.create_input_tokens_normal(batch_size, num_tokens)
         else:
             inputs = torch.hstack(
                 (inputs, torch.zeros((inputs.shape[0], N - inputs.shape[1]), device="cuda", dtype=torch.int).fill_(self.mask_token_id)))
@@ -130,7 +126,6 @@ class VQGANTransformer(nn.Module):
             masking = self.mask_by_random_topk(mask_len, selected_probs, temperature=self.choice_temperature * (1. - ratio))
             # Masks tokens with lower confidence.
             cur_ids = torch.where(masking, self.mask_token_id, sampled_ids)
-            # print((cur_ids == 8192).count_nonzero())
 
         # self.transformer.train()
         return cur_ids[:, 1:]

@@ -1,12 +1,12 @@
 import math
 import torch
 import torch.nn as nn
+import bpdb
 
 
 def weights_init(m):
     classname = m.__class__.__name__
     if "Linear" in classname or "Embedding" == classname:
-        print(f"Initializing Module {classname}.")
         nn.init.trunc_normal_(m.weight.data, 0.0, 0.02)
     # elif "Parameter" in classname:
     #     return nn.init.trunc_normal_(m, 0.0, 0.02)
@@ -109,7 +109,9 @@ class BidirectionalTransformer(nn.Module):
         self.num_image_tokens = num_image_tokens
         self.tok_emb = nn.Embedding(num_codebook_vectors + 2, dim)
         # self.pos_emb = PositionalEmbedding(args.dim, self.num_image_tokens + 1)
-        self.pos_emb = nn.init.trunc_normal_(nn.Parameter(torch.zeros(self.num_image_tokens + 1, dim)), 0., 0.02)
+
+        # I set position embeddings to be much larger than they should need to be
+        self.pos_emb = nn.init.trunc_normal_(nn.Parameter(torch.zeros(self.num_image_tokens * 2, dim)), 0., 0.02)
         # self.register_buffer("pos_emb", nn.init.trunc_normal_(nn.Parameter(torch.zeros(1024, args.dim)), 0., 0.02))
         self.blocks = nn.Sequential(*[Encoder(dim, hidden_dim) for _ in range(n_layers)])
         self.Token_Prediction = nn.Sequential(*[
@@ -117,7 +119,11 @@ class BidirectionalTransformer(nn.Module):
             nn.GELU(),
             nn.LayerNorm(dim, eps=1e-12)
         ])
-        self.bias = nn.Parameter(torch.zeros(self.num_image_tokens+1, num_codebook_vectors + 2))
+
+        # The bias is much larger than it reasonably should be, so that it can
+        # handle larger input sizes
+        # TODO does this change create instability?
+        self.bias = nn.Parameter(torch.zeros(self.num_image_tokens* 2, num_codebook_vectors + 2))
         self.ln = nn.LayerNorm(dim, eps=1e-12)
         self.drop = nn.Dropout(p=0.1)
         self.apply(weights_init)
@@ -126,11 +132,10 @@ class BidirectionalTransformer(nn.Module):
         token_embeddings = self.tok_emb(x)
         t = token_embeddings.shape[1]
         position_embeddings = self.pos_emb[:t, :]
-        # position_embeddings = self.pos_emb(x)
         embed = self.drop(self.ln(token_embeddings + position_embeddings))
         embed = self.blocks(embed)
         embed = self.Token_Prediction(embed)
-        logits = torch.matmul(embed, self.tok_emb.weight.T) + self.bias
+        logits = torch.matmul(embed, self.tok_emb.weight.T) + self.bias[:embed.shape[1], :]
 
         return logits
 

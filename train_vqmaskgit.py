@@ -2,6 +2,7 @@ import torch
 import json
 from pytorch_lightning.callbacks import StochasticWeightAveraging, ModelCheckpoint, LearningRateMonitor
 from torch.utils.data import DataLoader
+from einops import rearrange, repeat
 import torch.nn.functional as F
 import torchinfo
 from random import randint
@@ -11,19 +12,16 @@ import datetime
 import os
 import sys
 
+import bpdb
+
 dirname = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(dirname, "./ascii-dataset/"))
 from dataset import AsciiArtDataset
 import ascii_util
 
-sys.path.insert(0, os.path.join(dirname, "./python-pytorch-font-renderer/"))
-from font_renderer import FontRenderer
-
 from vqvae import VQ_VAE
+from transformer import VQGANTransformer
 from augmentation import RandomRoll
-
-from maskgit import MaskGit, Transformer
-
 
 def get_training_args():
     parser = argparse.ArgumentParser()
@@ -91,7 +89,7 @@ def get_training_args():
 class MaskGitTrainer(pl.LightningModule):
     def __init__(
         self,
-        maskgit: MaskGit,
+        transformer: VQGANTransformer,
         vae: VQ_VAE,
         batch_size: int,
         should_random_roll=True,
@@ -101,7 +99,7 @@ class MaskGitTrainer(pl.LightningModule):
     ):
         super().__init__()
 
-        self.maskgit = maskgit
+        self.transformer = transformer
         self.vae = vae
         self.vae.eval()
         self.hparams.lr = learning_rate
@@ -117,8 +115,10 @@ class MaskGitTrainer(pl.LightningModule):
     def step(self, x, _):
         with torch.no_grad():
             indeces = self.vae.encode(x.to(self.vae.dtype))
-        loss = self.maskgit(indeces)
+        logits, targets = self.transformer(indeces)
+        logits = rearrange(logits, "b w c -> b c w")
 
+        loss = F.cross_entropy(logits, targets)
         logs = {
             "l": loss,
         }
@@ -179,7 +179,10 @@ class MaskGitTrainer(pl.LightningModule):
         with torch.no_grad():
             self.eval()
             # Generates an image
-            ids = self.maskgit.generate(2, randint(4, 20), temperature=1.0)
+            id_res = randint(4, 16)
+            ids = self.transformer.sample_good(id_res**2, T=18, batch_size=2)
+            ids = ids.reshape(ids.shape[0], id_res, id_res)
+            bpdb.set_trace()
             ascii_tensors = self.vae.decode_from_ids(ids)
             ascii_tensors_log = F.log_softmax(ascii_tensors)
             ascii_tensors_gumbel = F.gumbel_softmax(ascii_tensors_log, dim=1)
@@ -229,20 +232,11 @@ if __name__ in {"__main__", "__console__"}:
 
     vqvae = VQ_VAE.load_from_checkpoint(args.vq_vae_dir)
     vqvae.eval()
-    transformer = Transformer(
-        num_tokens=vqvae.vq_k,
-        seq_len=25**2,
-        dim=512,
-        depth=8,
-        dim_head=64,
-        heads=8,
-        ff_mult=4,
-    )
 
-    maskgit = MaskGit(transformer)
+    transformer = VQGANTransformer(512, 20**2, vqvae)
     # torchinfo.summary(maskgit, input_size=(7, 16, 16))
 
-    maskgit_trainer = MaskGitTrainer(maskgit, vqvae, args.batch_size, learning_rate=args.learning_rate)
+    maskgit_trainer = MaskGitTrainer(transformer, vqvae, args.batch_size, learning_rate=args.learning_rate)
     maskgit_trainer.to(torch.device("cuda"))
 
     if not args.maskgit_dir:
