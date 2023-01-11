@@ -85,7 +85,7 @@ def main(stdscr, args):
     curses.noecho()
     curses.curs_set(False)
     rows, cols = stdscr.getmaxyx()
-    pad = curses.newpad(rows, cols)
+    window = curses.newwin(rows, cols)
 
     assert rows >= 64 and cols >= 64, "Terminal size needs to be at least 64x64"
 
@@ -162,8 +162,10 @@ def main(stdscr, args):
             # Pad shift places the decoded_str in the middle of the pad, in the
             # middle of where the embed_largest_input_shape would be
             pad_shift = embed_largest_input_shape - input_shape
-            pad.addstr(pad_shift//2, pad_shift - pad_shift//2, decoded_str)
-            pad.refresh(0, 0, 0, 0, 64, 64)
+            y_spacing = 1
+            for y, line in enumerate(decoded_str.splitlines()):
+                window.addstr(y_spacing * y + pad_shift//2, pad_shift - pad_shift // 2, line)
+            window.refresh()
 
         time.sleep(args.hold_length)
 
