@@ -1,6 +1,10 @@
 import torch
 import json
-from pytorch_lightning.callbacks import StochasticWeightAveraging, ModelCheckpoint, LearningRateMonitor
+from pytorch_lightning.callbacks import (
+    StochasticWeightAveraging,
+    ModelCheckpoint,
+    LearningRateMonitor,
+)
 from torch.utils.data import DataLoader
 from einops import rearrange
 import torch.nn.functional as F
@@ -21,6 +25,7 @@ import ascii_util
 from vqvae import VQ_VAE
 from transformer import VQGANTransformer
 from augmentation import RandomRoll
+
 
 def get_training_args():
     parser = argparse.ArgumentParser()
@@ -82,11 +87,11 @@ def get_training_args():
         default=True,
     )
     parser.add_argument(
-            "--find-lr",
-            dest="find_lr",
-            default=False,
-            action="store_true",
-            )
+        "--find-lr",
+        dest="find_lr",
+        default=False,
+        action="store_true",
+    )
 
     return parser.parse_args()
 
@@ -178,7 +183,7 @@ class MaskGitTrainer(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
         lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, min_lr=1e-9)
-        return {'optimizer':optimizer, 'lr_scheduler': lrs, 'monitor':'t_l'}
+        return {"optimizer": optimizer, "lr_scheduler": lrs, "monitor": "t_l"}
 
     def on_train_epoch_end(self):
         with torch.no_grad():
@@ -194,7 +199,7 @@ class MaskGitTrainer(pl.LightningModule):
             for i, ascii_tensor in enumerate(ascii_tensors_gumbel):
                 ascii_str = ascii_util.one_hot_embedded_matrix_to_string(ascii_tensor)
                 print(ascii_str)
-                if i+1 < ascii_tensors.shape[0]:
+                if i + 1 < ascii_tensors.shape[0]:
                     print("-**-" * id_res)
 
         self.train()
@@ -225,7 +230,11 @@ if __name__ in {"__main__", "__console__"}:
     trainer = pl.Trainer(
         max_epochs=args.n_epochs,
         accelerator="gpu" if device.type == "cuda" else "cpu",
-        callbacks=[StochasticWeightAveraging(swa_lrs=0.005), model_checkpoint, LearningRateMonitor()],
+        callbacks=[
+            StochasticWeightAveraging(swa_lrs=0.005),
+            model_checkpoint,
+            LearningRateMonitor(),
+        ],
         check_val_every_n_epoch=args.validation_every,
         auto_lr_find=True,
         logger=logger,
@@ -241,7 +250,13 @@ if __name__ in {"__main__", "__console__"}:
     transformer = VQGANTransformer(512, 20**2, vqvae)
     # torchinfo.summary(maskgit, input_size=(7, 16, 16))
 
-    maskgit_trainer = MaskGitTrainer(transformer, vqvae, args.batch_size, learning_rate=args.learning_rate, validation_prop=args.validation_prop)
+    maskgit_trainer = MaskGitTrainer(
+        transformer,
+        vqvae,
+        args.batch_size,
+        learning_rate=args.learning_rate,
+        validation_prop=args.validation_prop,
+    )
     maskgit_trainer.to(torch.device("cuda"))
 
     if args.find_lr:

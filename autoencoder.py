@@ -29,12 +29,17 @@ class Decoder(nn.Module):
         # Input: batch_size by 128 by 64 by 64
         self.c3 = Conv2dBlock(272, 212, kernel_size=kernel_size)
         self.c4 = Conv2dBlock(212, 152, kernel_size=kernel_size)
-        self.c5 = nn.Conv2d(
+        self.c5 = Conv2dBlock(
             152,
             95,
-            padding=kernel_size // 2,
             kernel_size=kernel_size,
         )
+        self.c6 = Conv2dBlock(
+            152,
+            95,
+            kernel_size=kernel_size,
+        )
+        self.c7 = nn.Conv2d(95, 95, kernel_size=kernel_size, padding=kernel_size // 2)
 
     def forward(self, z, x_res):
         """
@@ -46,12 +51,16 @@ class Decoder(nn.Module):
         scale_factor1 = math.ceil(x_res / 2) / z_res
         scale_factor2 = x_res / math.ceil(x_res / 2)
         # print(z_res, scale_factor1, scale_factor2)
-        return self.c5(
-            self.c4(
-                self.c3(
-                    self.bl2(
-                        self.c2(self.bl1(self.c1(z), scale=scale_factor1)),
-                        scale=scale_factor2,
+        return self.c7(
+            self.c6(
+                self.c5(
+                    self.c4(
+                        self.c3(
+                            self.bl2(
+                                self.c2(self.bl1(self.c1(z), scale=scale_factor1)),
+                                scale=scale_factor2,
+                            )
+                        )
                     )
                 )
             )
@@ -72,6 +81,7 @@ class Encoder(nn.Module):
             # Size comments are based on an input shape of batch_size by 95 by
             # 64 by 64
             # Input batch_size x 95 x 64 x 64
+            Conv2dBlock(95, 95, kernel_size=kernel_size),
             Conv2dBlock(95, 152, kernel_size=kernel_size),
             Conv2dBlock(152, 212, kernel_size=kernel_size),
             Conv2dBlock(212, 272, kernel_size=kernel_size),

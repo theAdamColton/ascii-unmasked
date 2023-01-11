@@ -11,6 +11,7 @@ import numpy as np
 import math
 from bidirectional_transformer import BidirectionalTransformer
 from vqvae import VQ_VAE
+
 _CONFIDENCE_OF_KNOWN_TOKENS = torch.Tensor([torch.inf]).to("cuda")
 
 import bpdb
@@ -27,20 +28,29 @@ class VQGANTransformer(nn.Module):
         self.gamma = self.gamma_func("cosine")
 
         # Some reasonable defaults
-        self.transformer = BidirectionalTransformer(num_image_tokens, num_codebook_vectors, 512, 16, 2048)
+        self.transformer = BidirectionalTransformer(
+            num_image_tokens, num_codebook_vectors, 512, 16, 2048
+        )
         self.vqvae = vqvae
 
     def forward(self, z_indices):
-        z_indices = rearrange(z_indices, 'b ... -> b (...)')
-        #z_indices_one_hot 
-        sos_tokens = torch.ones(z_indices.shape[0], 1, dtype=torch.long, device=z_indices.device) * self.sos_token
+        z_indices = rearrange(z_indices, "b ... -> b (...)")
+        # z_indices_one_hot
+        sos_tokens = (
+            torch.ones(z_indices.shape[0], 1, dtype=torch.long, device=z_indices.device)
+            * self.sos_token
+        )
 
         r = math.floor(self.gamma(np.random.uniform()) * z_indices.shape[1])
-        sample = torch.rand(z_indices.shape, device=z_indices.device).topk(r, dim=1).indices
+        sample = (
+            torch.rand(z_indices.shape, device=z_indices.device).topk(r, dim=1).indices
+        )
         mask = torch.zeros(z_indices.shape, dtype=torch.bool, device=z_indices.device)
         mask.scatter_(dim=1, index=sample, value=True)
 
-        masked_indices = self.mask_token_id * torch.ones_like(z_indices, device=z_indices.device)
+        masked_indices = self.mask_token_id * torch.ones_like(
+            z_indices, device=z_indices.device
+        )
         a_indices = mask * z_indices + (~mask) * masked_indices
 
         a_indices = torch.cat((sos_tokens, a_indices), dim=1)
@@ -66,9 +76,9 @@ class VQGANTransformer(nn.Module):
         elif mode == "cosine":
             return lambda r: np.cos(r * np.pi / 2)
         elif mode == "square":
-            return lambda r: 1 - r ** 2
+            return lambda r: 1 - r**2
         elif mode == "cubic":
-            return lambda r: 1 - r ** 3
+            return lambda r: 1 - r**3
         else:
             raise NotImplementedError
 
@@ -83,12 +93,16 @@ class VQGANTransformer(nn.Module):
         return logits
 
     def mask_by_random_topk(self, mask_len, probs, temperature=1.0):
-        confidence = torch.log(probs) + temperature * torch.distributions.gumbel.Gumbel(0, 1).sample(probs.shape).to("cuda")
+        confidence = torch.log(probs) + temperature * torch.distributions.gumbel.Gumbel(
+            0, 1
+        ).sample(probs.shape).to("cuda")
         sorted_confidence, _ = torch.sort(confidence, dim=-1)
         # Obtains cut off threshold given the mask lengths.
-        cut_off = torch.take_along_dim(sorted_confidence, mask_len.to(torch.long), dim=-1)
+        cut_off = torch.take_along_dim(
+            sorted_confidence, mask_len.to(torch.long), dim=-1
+        )
         # Masks tokens with lower confidence.
-        masking = (confidence < cut_off)
+        masking = confidence < cut_off
         return masking
 
     @torch.no_grad()
@@ -99,35 +113,73 @@ class VQGANTransformer(nn.Module):
             inputs = self.create_input_tokens_normal(batch_size, num_tokens)
         else:
             inputs = torch.hstack(
-                (inputs, torch.zeros((inputs.shape[0], N - inputs.shape[1]), device="cuda", dtype=torch.int).fill_(self.mask_token_id)))
+                (
+                    inputs,
+                    torch.zeros(
+                        (inputs.shape[0], N - inputs.shape[1]),
+                        device="cuda",
+                        dtype=torch.int,
+                    ).fill_(self.mask_token_id),
+                )
+            )
 
-        sos_tokens = torch.ones(inputs.shape[0], 1, dtype=torch.long, device=inputs.device) * self.sos_token
+        sos_tokens = (
+            torch.ones(inputs.shape[0], 1, dtype=torch.long, device=inputs.device)
+            * self.sos_token
+        )
         inputs = torch.cat((sos_tokens, inputs), dim=1)
 
-        unknown_number_in_the_beginning = torch.sum(inputs == self.mask_token_id, dim=-1)
+        unknown_number_in_the_beginning = torch.sum(
+            inputs == self.mask_token_id, dim=-1
+        )
         gamma = self.gamma_func(mode)
         cur_ids = inputs  # [8, 257]
         for t in range(T):
-            logits = self.tokens_to_logits(cur_ids)  # call transformer to get predictions [8, 257, 1024]
-            sampled_ids = torch.distributions.categorical.Categorical(logits=logits).sample()
+            logits = self.tokens_to_logits(
+                cur_ids
+            )  # call transformer to get predictions [8, 257, 1024]
+            sampled_ids = torch.distributions.categorical.Categorical(
+                logits=logits
+            ).sample()
 
-            unknown_map = (cur_ids == self.mask_token_id)  # which tokens need to be sampled -> bool [8, 257]
-            sampled_ids = torch.where(unknown_map, sampled_ids, cur_ids)  # replace all -1 with their samples and leave the others untouched [8, 257]
+            unknown_map = (
+                cur_ids == self.mask_token_id
+            )  # which tokens need to be sampled -> bool [8, 257]
+            sampled_ids = torch.where(
+                unknown_map, sampled_ids, cur_ids
+            )  # replace all -1 with their samples and leave the others untouched [8, 257]
 
-            ratio = 1. * (t + 1) / T  # just a percentage e.g. 1 / 12
+            ratio = 1.0 * (t + 1) / T  # just a percentage e.g. 1 / 12
             mask_ratio = gamma(ratio)
 
-            probs = F.softmax(logits, dim=-1)  # convert logits into probs [8, 257, 1024]
-            selected_probs = torch.squeeze(torch.take_along_dim(probs, torch.unsqueeze(sampled_ids, -1), -1), -1)  # get probability for selected tokens in categorical call, also for already sampled ones [8, 257]
+            probs = F.softmax(
+                logits, dim=-1
+            )  # convert logits into probs [8, 257, 1024]
+            selected_probs = torch.squeeze(
+                torch.take_along_dim(probs, torch.unsqueeze(sampled_ids, -1), -1), -1
+            )  # get probability for selected tokens in categorical call, also for already sampled ones [8, 257]
 
-            selected_probs = torch.where(unknown_map, selected_probs, _CONFIDENCE_OF_KNOWN_TOKENS)  # ignore tokens which are already sampled [8, 257]
+            selected_probs = torch.where(
+                unknown_map, selected_probs, _CONFIDENCE_OF_KNOWN_TOKENS
+            )  # ignore tokens which are already sampled [8, 257]
 
-            mask_len = torch.unsqueeze(torch.floor(unknown_number_in_the_beginning * mask_ratio), 1)  # floor(256 * 0.99) = 254 --> [254, 254, 254, 254, ....]
-            mask_len = torch.maximum(torch.zeros_like(mask_len), torch.minimum(torch.sum(unknown_map, dim=-1, keepdim=True)-1, mask_len))  # add -1 later when conditioning and also ones_like. Zeroes just because we have no cond token
+            mask_len = torch.unsqueeze(
+                torch.floor(unknown_number_in_the_beginning * mask_ratio), 1
+            )  # floor(256 * 0.99) = 254 --> [254, 254, 254, 254, ....]
+            mask_len = torch.maximum(
+                torch.zeros_like(mask_len),
+                torch.minimum(
+                    torch.sum(unknown_map, dim=-1, keepdim=True) - 1, mask_len
+                ),
+            )  # add -1 later when conditioning and also ones_like. Zeroes just because we have no cond token
             # max(1, min(how many unknown tokens, how many tokens we want to sample))
 
             # Adds noise for randomness
-            masking = self.mask_by_random_topk(mask_len, selected_probs, temperature=self.choice_temperature * (1. - ratio))
+            masking = self.mask_by_random_topk(
+                mask_len,
+                selected_probs,
+                temperature=self.choice_temperature * (1.0 - ratio),
+            )
             # Masks tokens with lower confidence.
             cur_ids = torch.where(masking, self.mask_token_id, sampled_ids)
 
@@ -135,12 +187,20 @@ class VQGANTransformer(nn.Module):
         return cur_ids[:, 1:]
 
     @staticmethod
-    def create_masked_image(image: torch.Tensor, x_start: int = 100, y_start: int = 100, size: int = 50):
+    def create_masked_image(
+        image: torch.Tensor, x_start: int = 100, y_start: int = 100, size: int = 50
+    ):
         mask = torch.ones_like(image, dtype=torch.int)
-        mask[:, :, x_start:x_start + size, y_start:y_start + size] = 0
+        mask[:, :, x_start : x_start + size, y_start : y_start + size] = 0
         return image * mask, mask
 
-    def inpainting(self, image: torch.Tensor, x_start: int = 100, y_start: int = 100, size: int = 50):
+    def inpainting(
+        self,
+        image: torch.Tensor,
+        x_start: int = 100,
+        y_start: int = 100,
+        size: int = 50,
+    ):
         # Note: this function probably doesnt work yet lol
         # apply mask on image
         masked_image, mask = self.create_masked_image(image, x_start, y_start, size)
@@ -159,8 +219,9 @@ class VQGANTransformer(nn.Module):
         patched_mask = mask.unfold(2, p, p).unfold(1, p, p)
         patched_mask = torch.transpose(patched_mask, 3, 4)
         patched_mask = patched_mask.permute(1, 2, 0, 3, 4)
-        patched_mask = patched_mask.contiguous().view(patched_mask.size(0) * patched_mask.size(1),
-                                                      -1)  # 256 x 256 i.e. 16x16 x 256
+        patched_mask = patched_mask.contiguous().view(
+            patched_mask.size(0) * patched_mask.size(1), -1
+        )  # 256 x 256 i.e. 16x16 x 256
 
         indices_mask, _ = torch.min(patched_mask, dim=-1)
         indices = indices_mask * indices
@@ -182,13 +243,19 @@ class VQGANTransformer(nn.Module):
         n = 128
         base = torch.arange(n).view(1, -1).max(torch.arange(n).view(-1, 1))
         right = torch.stack((torch.rot90(base, 1, [0, 1]), base)).reshape(n * 2, n)
-        left = torch.stack((torch.rot90(base, 2, [0, 1]), torch.rot90(base, 3, [0, 1]))).reshape(n * 2, n)
+        left = torch.stack(
+            (torch.rot90(base, 2, [0, 1]), torch.rot90(base, 3, [0, 1]))
+        ).reshape(n * 2, n)
         full = torch.cat((left, right), 1)
 
         # construct opacity matrix for intra region
         min_blend = torch.min(torch.where(intra == 1, full, 1000000))
         max_blend = torch.max(torch.where(intra == 1, full, -1000000))
-        mask_blend = torch.where(intra == 1, (full - min_blend) / max_blend, torch.ones_like(intra, dtype=torch.float))
+        mask_blend = torch.where(
+            intra == 1,
+            (full - min_blend) / max_blend,
+            torch.ones_like(intra, dtype=torch.float),
+        )
 
         mask_real = torch.where(mask == 0, mask.type(torch.float), mask_blend)
         mask_fake = torch.where(mask == 0, (1 - mask).type(torch.float), mask_blend)
@@ -196,5 +263,3 @@ class VQGANTransformer(nn.Module):
         blended_image = mask_real * image + mask_fake * inpainted_image
 
         return blended_image, inpainted_image
-
-

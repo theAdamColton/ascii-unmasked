@@ -58,7 +58,9 @@ def get_args():
 
 @torch.no_grad()
 def main(stdscr, args):
-    dataset = AsciiArtDataset(res=64, ragged_batch_bin=True, ragged_batch_bin_batch_size=1)
+    dataset = AsciiArtDataset(
+        res=64, ragged_batch_bin=True, ragged_batch_bin_batch_size=1
+    )
 
     cuda = args.cuda
     if cuda:
@@ -93,7 +95,9 @@ def main(stdscr, args):
     embedding2, embedding2_input_shape = get_random(device, dataset, autoenc.encoder)
     while True:
         embedding1, embedding1_input_shape = embedding2, embedding2_input_shape
-        embedding2, embedding2_input_shape = get_random(device, dataset, autoenc.encoder)
+        embedding2, embedding2_input_shape = get_random(
+            device, dataset, autoenc.encoder
+        )
 
         if embedding2.shape[-1] > embedding1.shape[-1]:
             embed_smallest = embedding1
@@ -110,7 +114,6 @@ def main(stdscr, args):
 
         embed_shape_diff = abs(embedding1.shape[-1] - embedding2.shape[-1])
         input_shape_diff = abs(embedding1_input_shape - embedding2_input_shape)
-
 
         """
         embedding1_shape and embedding2_shape might be different.
@@ -135,9 +138,22 @@ def main(stdscr, args):
             embed_shape = int(embed_smallest_shape + round(embed_shape_diff * x_scaled))
             padding = embed_shape - embed_smallest_shape
             trimming = embed_largest_shape - embed_shape
-            embed_smallest_padded = F.pad(embed_smallest, (padding//2, padding - padding//2, padding//2, padding - padding//2))
+            embed_smallest_padded = F.pad(
+                embed_smallest,
+                (
+                    padding // 2,
+                    padding - padding // 2,
+                    padding // 2,
+                    padding - padding // 2,
+                ),
+            )
             if trimming != 0:
-                embed_largest_trimmed = embed_largest[:, :, trimming//2:-(trimming - trimming//2), trimming//2:-(trimming - trimming//2)]
+                embed_largest_trimmed = embed_largest[
+                    :,
+                    :,
+                    trimming // 2 : -(trimming - trimming // 2),
+                    trimming // 2 : -(trimming - trimming // 2),
+                ]
             else:
                 embed_largest_trimmed = embed_largest
 
@@ -145,9 +161,13 @@ def main(stdscr, args):
                 bpdb.set_trace()
 
             if embedding1.shape[-1] < embedding2.shape[-1]:
-                interp_embedding = x_scaled * embed_largest_trimmed + (1 - x) * embed_smallest_padded
+                interp_embedding = (
+                    x_scaled * embed_largest_trimmed + (1 - x) * embed_smallest_padded
+                )
             else:
-                interp_embedding = x_scaled * embed_smallest_padded + (1 - x) * embed_largest_trimmed
+                interp_embedding = (
+                    x_scaled * embed_smallest_padded + (1 - x) * embed_largest_trimmed
+                )
 
             # interpolated encoder input shape
             if embedding1.shape[-1] < embedding2.shape[-1]:
@@ -157,7 +177,7 @@ def main(stdscr, args):
 
             decoded = autoenc.decoder(interp_embedding, x_res=input_shape)
             decoded_str = ascii_util.one_hot_embedded_matrix_to_string(decoded[0])
-            #bpdb.set_trace()
+            # bpdb.set_trace()
 
             # Pad shift places the decoded_str in the middle of the pad, in the
             # middle of where the embed_largest_input_shape would be
@@ -166,12 +186,11 @@ def main(stdscr, args):
             for y, line in enumerate(decoded_str.splitlines()):
                 if y > rows:
                     break
-                window.addstr(y_spacing * y + pad_shift//2, pad_shift // 2, line)
+                window.addstr(y_spacing * y + pad_shift // 2, pad_shift // 2, line)
             window.refresh()
 
         time.sleep(args.hold_length)
         window.clear()
-
 
 
 def get_random(device, dataset, encoder):
