@@ -27,7 +27,7 @@ class VQGANTransformer(nn.Module):
         self.gamma = self.gamma_func("cosine")
 
         # Some reasonable defaults
-        self.transformer = BidirectionalTransformer(num_image_tokens, num_codebook_vectors, 512, 12, 1024)
+        self.transformer = BidirectionalTransformer(num_image_tokens, num_codebook_vectors, 512, 16, 2048)
         self.vqvae = vqvae
 
     def forward(self, z_indices):

@@ -185,7 +185,7 @@ class MaskGitTrainer(pl.LightningModule):
             self.eval()
             # Generates an image
             id_res = randint(4, 16)
-            ids = self.transformer.sample_good(id_res**2, T=18, batch_size=2)
+            ids = self.transformer.sample_good(id_res**2, T=18, batch_size=3)
             ids = ids.reshape(ids.shape[0], id_res, id_res)
             ascii_tensors = self.vae.decode_from_ids(ids)
             ascii_tensors_log = F.log_softmax(ascii_tensors)
@@ -232,8 +232,7 @@ if __name__ in {"__main__", "__console__"}:
         log_every_n_steps=10,
         precision=16,
         amp_backend="native",
-        accumulate_grad_batches=12,
-        gradient_clip_val=0.5,
+        accumulate_grad_batches=100,
     )
 
     vqvae = VQ_VAE.load_from_checkpoint(args.vq_vae_dir)
