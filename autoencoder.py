@@ -21,6 +21,7 @@ class Decoder(nn.Module):
         super().__init__()
         # Input: batch_size by 256 by 16 by 16
         # Conv2dBlock(256, 256),
+        self.c1 = Conv2dBlock(512, 512, kernel_size=kernel_size)
         self.c1 = Conv2dBlock(512, 452, kernel_size=kernel_size)
         self.bl1 = BilinearConvUpsample(452, 392, kernel_size=kernel_size)
         # Input: batch_size by 200 by 32 by 32
@@ -35,7 +36,7 @@ class Decoder(nn.Module):
             kernel_size=kernel_size,
         )
         self.c6 = Conv2dBlock(
-            152,
+            95,
             95,
             kernel_size=kernel_size,
         )
@@ -50,7 +51,6 @@ class Decoder(nn.Module):
         z_res = z.shape[2]
         scale_factor1 = math.ceil(x_res / 2) / z_res
         scale_factor2 = x_res / math.ceil(x_res / 2)
-        # print(z_res, scale_factor1, scale_factor2)
         return self.c7(
             self.c6(
                 self.c5(

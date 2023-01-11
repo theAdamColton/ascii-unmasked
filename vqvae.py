@@ -19,6 +19,7 @@ import ascii_util
 
 sys.path.insert(0, path.join(dirname, "./python-pytorch-font-renderer/"))
 from font_renderer import FontRenderer
+from character_embeddings import generate_embedding_space_distances
 
 
 class VQ_VAE(pl.LightningModule):
@@ -41,6 +42,7 @@ class VQ_VAE(pl.LightningModule):
         validation_prop=0.01,
         batch_size=16,
         max_res=128,
+        ce_similarity_loss_coeff=1.0,
     ):
         super().__init__()
 
@@ -49,6 +51,7 @@ class VQ_VAE(pl.LightningModule):
         self.vq_k = vq_k
         self.lr = lr
         self.ce_recon_loss_scale = ce_recon_loss_scale
+        self.ce_similarity_loss_coeff = ce_similarity_loss_coeff
         self.image_recon_loss_coeff = image_recon_loss_coeff
         self.gumbel_tau_r = gumbel_tau_r
         self.validation_prop = validation_prop
@@ -72,6 +75,11 @@ class VQ_VAE(pl.LightningModule):
         self.ce_loss = torch.nn.CrossEntropyLoss(
             weight=char_weights, label_smoothing=label_smoothing
         )
+
+        characters_distances = torch.Tensor(generate_embedding_space_distances(n_components=12))
+        # Want the characters_similarity_matrix to sum to 1 along it's rows.
+        characters_similarity_matrix = (characters_distances / characters_distances.max()).softmax(dim=1)
+        self.characters_similarity_matrix = characters_similarity_matrix.to(device)
 
         self.save_hyperparameters(ignore=["font_renderer"])
 
@@ -102,17 +110,26 @@ class VQ_VAE(pl.LightningModule):
             self.ce_loss(x_hat_gumbel, x.argmax(dim=1)) * self.ce_recon_loss_scale
         )
 
-        base_image = self.font_renderer.render(x)
-        recon_image = self.font_renderer.render(x_hat_gumbel)
-        im_rec_loss = F.mse_loss(base_image, recon_image) * self.image_recon_loss_coeff
+        if self.ce_similarity_loss_coeff > 0.0:
+            ce_similarity_loss = (self.characters_similarity_matrix[x.argmax(dim=1)].movedim(-1, 1)*x_hat_gumbel).mean() * self.ce_similarity_loss_coeff
+        else:
+            ce_similarity_loss = 0.0
+
+        if self.image_recon_loss_coeff > 0.0:
+            base_image = self.font_renderer.render(x)
+            recon_image = self.font_renderer.render(x_hat_gumbel)
+            im_rec_loss = F.mse_loss(base_image, recon_image) * self.image_recon_loss_coeff
+        else:
+            im_rec_loss = 0.0
 
         vq_loss = F.mse_loss(z_q_x, z_e_x.detach())
         commit_loss = F.mse_loss(z_e_x, z_q_x.detach()) * self.vq_beta
 
-        loss = ce_rec_loss + im_rec_loss + vq_loss + commit_loss
+        loss = ce_rec_loss + im_rec_loss + vq_loss + commit_loss + ce_similarity_loss
         logs = {
             "im": im_rec_loss,
             "ce": ce_rec_loss,
+            "sl": ce_similarity_loss,
             "vq": vq_loss,
             "cl": commit_loss,
             "l": loss,
@@ -203,7 +220,7 @@ class VQ_VAE(pl.LightningModule):
         )
 
     def configure_optimizers(self):
-        return torch.optim.Adam(
+        optimizer = torch.optim.Adam(
             (
                 *self.encoder.parameters(),
                 *self.decoder.parameters(),
@@ -211,6 +228,8 @@ class VQ_VAE(pl.LightningModule):
             ),
             lr=self.lr,
         )
+        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, min_lr=1e-7, factor=0.5,cooldown=5,)
+        return {"optimizer": optimizer, "lr_scheduler": lrs, "monitor": "t_l"}
 
     def get_encoded_fmap_size(self, image_size: int):
         # 64 -> 16

@@ -1,6 +1,6 @@
 import torch
 import json
-from pytorch_lightning.callbacks import StochasticWeightAveraging, ModelCheckpoint
+from pytorch_lightning.callbacks import StochasticWeightAveraging, ModelCheckpoint, LearningRateMonitor
 from torch.utils.data import DataLoader
 import torchinfo
 import argparse
@@ -38,6 +38,9 @@ def get_training_args():
     # Loss coefficients
     parser.add_argument(
         "--ce-recon-loss-scale", dest="ce_recon_loss_scale", default=0.1, type=float
+    )
+    parser.add_argument(
+        "--ce-similarity-loss-coeff", dest="ce_similarity_loss_coeff", default=1.0, type=float
     )
     parser.add_argument(
         "--ce-label-smoothing",
@@ -114,7 +117,12 @@ def get_training_args():
         action="store_true",
         default=True,
     )
-
+    parser.add_argument(
+        "--find-lr",
+        dest="find_lr",
+        default=False,
+        action="store_true",
+    )
     return parser.parse_args()
 
 
@@ -144,6 +152,7 @@ if __name__ in {"__main__", "__console__"}:
         validation_prop=args.validation_prop,
         batch_size=args.batch_size,
         max_res=args.max_res,
+        ce_similarity_loss_coeff=args.ce_similarity_loss_coeff,
     )
 
     dt_string = datetime.datetime.now().strftime("%d-%m-%Y_%H-%M")
@@ -163,7 +172,7 @@ if __name__ in {"__main__", "__console__"}:
     trainer = pl.Trainer(
         max_epochs=args.n_epochs,
         accelerator="gpu" if device.type == "cuda" else "cpu",
-        callbacks=[StochasticWeightAveraging(swa_lrs=0.05), model_checkpoint],
+        callbacks=[StochasticWeightAveraging(swa_lrs=0.05), model_checkpoint, LearningRateMonitor()],
         check_val_every_n_epoch=args.validation_every,
         auto_lr_find=True,
         logger=logger,
@@ -171,11 +180,18 @@ if __name__ in {"__main__", "__console__"}:
         precision=16,
         amp_backend="native",
         gradient_clip_val=1.0,
-        accumulate_grad_batches=4,
+        accumulate_grad_batches=8,
     )
 
     torchinfo.summary(vqvae.encoder, input_size=(7, 95, 64, 64))
     # torchinfo.summary(vqvae.decoder, input_size=(7, args.vq_z_dim, 32, 32))
+
+    if args.find_lr:
+        lr_finder = trainer.tuner.lr_find(vqvae)
+        new_lr = lr_finder.suggestion()
+        print(lr_finder.results)
+        print(new_lr)
+        vqvae.lr = new_lr
 
     if not args.load:
         trainer.fit(model=vqvae)
