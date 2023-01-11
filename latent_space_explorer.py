@@ -161,13 +161,16 @@ def main(stdscr, args):
 
             # Pad shift places the decoded_str in the middle of the pad, in the
             # middle of where the embed_largest_input_shape would be
-            pad_shift = embed_largest_input_shape - input_shape
+            pad_shift = 60 - input_shape
             y_spacing = 1
             for y, line in enumerate(decoded_str.splitlines()):
-                window.addstr(y_spacing * y + pad_shift//2, pad_shift - pad_shift // 2, line)
+                if y > rows:
+                    break
+                window.addstr(y_spacing * y + pad_shift//2, pad_shift // 2, line)
             window.refresh()
 
         time.sleep(args.hold_length)
+        window.clear()
 
 
 
