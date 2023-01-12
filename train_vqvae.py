@@ -137,23 +137,43 @@ if __name__ in {"__main__", "__console__"}:
     char_weights = torch.ones(95)
     char_weights[0] = char_weights[0] / args.space_deemph
 
-    vqvae = VQ_VAE(
-        lr=args.learning_rate,
-        char_weights=char_weights,
-        label_smoothing=args.ce_label_smoothing,
-        ce_recon_loss_scale=args.ce_recon_loss_scale,
-        image_recon_loss_coeff=args.image_recon_loss_coeff,
-        gumbel_tau_r=args.gumbel_tau_r,
-        device=device,
-        kernel_size=3,
-        vq_beta=args.vq_beta,
-        vq_z_dim=args.vq_z_dim,
-        should_random_roll=not args.dont_augment_data,
-        validation_prop=args.validation_prop,
-        batch_size=args.batch_size,
-        max_res=args.max_res,
-        ce_similarity_loss_coeff=args.ce_similarity_loss_coeff,
-    )
+    if args.load:
+        vqvae = VQ_VAE.load_from_checkpoint(
+            checkpoint_path=args.load,
+            lr=args.learning_rate,
+            char_weights=char_weights,
+            label_smoothing=args.ce_label_smoothing,
+            ce_recon_loss_scale=args.ce_recon_loss_scale,
+            image_recon_loss_coeff=args.image_recon_loss_coeff,
+            gumbel_tau_r=args.gumbel_tau_r,
+            device=device,
+            kernel_size=3,
+            vq_beta=args.vq_beta,
+            vq_z_dim=args.vq_z_dim,
+            should_random_roll=not args.dont_augment_data,
+            validation_prop=args.validation_prop,
+            batch_size=args.batch_size,
+            max_res=args.max_res,
+            ce_similarity_loss_coeff=args.ce_similarity_loss_coeff,
+        )
+    else:
+        vqvae = VQ_VAE(
+            lr=args.learning_rate,
+            char_weights=char_weights,
+            label_smoothing=args.ce_label_smoothing,
+            ce_recon_loss_scale=args.ce_recon_loss_scale,
+            image_recon_loss_coeff=args.image_recon_loss_coeff,
+            gumbel_tau_r=args.gumbel_tau_r,
+            device=device,
+            kernel_size=3,
+            vq_beta=args.vq_beta,
+            vq_z_dim=args.vq_z_dim,
+            should_random_roll=not args.dont_augment_data,
+            validation_prop=args.validation_prop,
+            batch_size=args.batch_size,
+            max_res=args.max_res,
+            ce_similarity_loss_coeff=args.ce_similarity_loss_coeff,
+        )
 
     dt_string = datetime.datetime.now().strftime("%d-%m-%Y_%H-%M")
     dirpath = "ckpt/{}checkpoint/{}".format(args.run_name, dt_string)
@@ -176,11 +196,10 @@ if __name__ in {"__main__", "__console__"}:
         check_val_every_n_epoch=args.validation_every,
         auto_lr_find=True,
         logger=logger,
-        log_every_n_steps=10,
         precision=16,
         amp_backend="native",
         gradient_clip_val=1.0,
-        accumulate_grad_batches=8,
+        accumulate_grad_batches=4,
     )
 
     torchinfo.summary(vqvae.encoder, input_size=(7, 95, 64, 64))

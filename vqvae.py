@@ -49,7 +49,7 @@ class VQ_VAE(pl.LightningModule):
         self.encoder = Encoder(kernel_size=kernel_size)
         self.decoder = Decoder(kernel_size=kernel_size)
         self.vq_k = vq_k
-        self.lr = lr
+        self.hparams.learning_rate = lr
         self.ce_recon_loss_scale = ce_recon_loss_scale
         self.ce_similarity_loss_coeff = ce_similarity_loss_coeff
         self.image_recon_loss_coeff = image_recon_loss_coeff
@@ -90,12 +90,12 @@ class VQ_VAE(pl.LightningModule):
         z_e_x = self.encoder(x)
         z_q_x_st, z_q_x = self.vq_embedding.straight_through(z_e_x)
         x_hat = self.decoder(z_q_x_st, x_res=x.shape[2])
-        x_hat_log = F.log_softmax(x_hat, dim=1)
+#        x_hat_log = F.log_softmax(x_hat, dim=1)
         self.gumbel_tau = max(0.5, math.exp(-self.gumbel_tau_r * self.current_epoch))
-        x_hat_gumbel = F.gumbel_softmax(
-            x_hat_log, dim=1, tau=self.gumbel_tau, hard=True
-        )
-        return x_hat_gumbel, z_e_x, z_q_x_st, z_q_x
+#        x_hat_gumbel = F.gumbel_softmax(
+#            x_hat_log, dim=1, tau=self.gumbel_tau, hard=True
+#        )
+        return x_hat, z_e_x, z_q_x_st, z_q_x
 
     def encode(self, x):
         x = x.squeeze(0)
@@ -105,19 +105,19 @@ class VQ_VAE(pl.LightningModule):
         return indeces
 
     def step(self, x, _):
-        x_hat_gumbel, z_e_x, z_q_x_st, z_q_x = self.forward(x)
+        x_hat, z_e_x, z_q_x_st, z_q_x = self.forward(x)
         ce_rec_loss = (
-            self.ce_loss(x_hat_gumbel, x.argmax(dim=1)) * self.ce_recon_loss_scale
+            self.ce_loss(x_hat, x.argmax(dim=1)) * self.ce_recon_loss_scale
         )
 
         if self.ce_similarity_loss_coeff > 0.0:
-            ce_similarity_loss = (self.characters_similarity_matrix[x.argmax(dim=1)].movedim(-1, 1)*x_hat_gumbel).mean() * self.ce_similarity_loss_coeff
+            ce_similarity_loss = (self.characters_similarity_matrix[x.argmax(dim=1)].movedim(-1, 1)*x_hat.softmax(dim=1)).mean() * self.ce_similarity_loss_coeff
         else:
             ce_similarity_loss = 0.0
 
         if self.image_recon_loss_coeff > 0.0:
             base_image = self.font_renderer.render(x)
-            recon_image = self.font_renderer.render(x_hat_gumbel)
+            recon_image = self.font_renderer.render(x_hat)
             im_rec_loss = F.mse_loss(base_image, recon_image) * self.image_recon_loss_coeff
         else:
             im_rec_loss = 0.0
@@ -226,10 +226,11 @@ class VQ_VAE(pl.LightningModule):
                 *self.decoder.parameters(),
                 *self.vq_embedding.embedding.parameters(),
             ),
-            lr=self.lr,
+            lr=self.hparams.learning_rate,
         )
-        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, min_lr=1e-7, factor=0.5,cooldown=5,)
-        return {"optimizer": optimizer, "lr_scheduler": lrs, "monitor": "t_l"}
+        #lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, min_lr=1e-6, factor=0.8,cooldown=5, threshold=1e-5)
+        #return {"optimizer": optimizer, "lr_scheduler": lrs, "monitor": "t_l"}
+        return optimizer
 
     def get_encoded_fmap_size(self, image_size: int):
         # 64 -> 16

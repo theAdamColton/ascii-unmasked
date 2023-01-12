@@ -19,6 +19,7 @@ dirname = path.dirname(__file__)
 sys.path.insert(0, path.join(dirname, "./ascii-dataset/"))
 import ascii_util
 from dataset import AsciiArtDataset
+from dataset import ascii_util
 
 dirname = path.dirname(__file__)
 sys.path.insert(0, path.join(dirname, "./python-pytorch-font-renderer/"))
@@ -92,12 +93,13 @@ def main(stdscr, args):
     assert rows >= 64 and cols >= 64, "Terminal size needs to be at least 64x64"
 
     next_frame = time.time() + 1 / args.frame_rate
-    embedding2, embedding2_input_shape = get_random(device, dataset, autoenc.encoder)
+    embedding2, embedding2_input_shape, embedding2_input, embedding2_label = get_random(device, dataset, autoenc.encoder)
     while True:
-        embedding1, embedding1_input_shape = embedding2, embedding2_input_shape
-        embedding2, embedding2_input_shape = get_random(
+        embedding1, embedding1_input_shape, embedding1_input = embedding2, embedding2_input_shape, embedding2_input
+        embedding2, embedding2_input_shape, embedding2_input, embedding2_label = get_random(
             device, dataset, autoenc.encoder
         )
+        embedding2_string = ascii_util.one_hot_embedded_matrix_to_string(embedding2_input.squeeze(0))
 
         if embedding2.shape[-1] > embedding1.shape[-1]:
             embed_smallest = embedding1
@@ -181,12 +183,16 @@ def main(stdscr, args):
 
             # Pad shift places the decoded_str in the middle of the pad, in the
             # middle of where the embed_largest_input_shape would be
-            pad_shift = 60 - input_shape
-            y_spacing = 1
-            for y, line in enumerate(decoded_str.splitlines()):
-                if y > rows:
-                    break
-                window.addstr(y_spacing * y + pad_shift // 2, pad_shift // 2, line)
+            pad_shift = min(rows, cols) - input_shape
+            put_string(decoded_str, rows, cols, window, y_shift=pad_shift//2, x_shift=pad_shift//2)
+
+            # Adds the original embedding2 to the right
+            embedding2_y_shift = (min(rows,cols) - embedding2_input_shape)//2
+            embedding2_x_shift = cols-embedding2_input_shape - 30
+            put_string(embedding2_string, rows, cols, window, y_shift=embedding2_y_shift, x_shift=embedding2_x_shift)
+
+            # Adds the label to below the embedding2_string
+            put_string(embedding2_label, rows, cols, window, y_shift=embedding2_y_shift+embedding2_input_shape, x_shift=embedding2_x_shift-80)
             window.refresh()
 
         time.sleep(args.hold_length)
@@ -194,15 +200,20 @@ def main(stdscr, args):
 
 
 def get_random(device, dataset, encoder):
-    """returns random embedding, and the shape of the input"""
-    img, _ = dataset[random.randint(0, len(dataset) - 1)]
+    """returns random embedding, and the shape of the input, input"""
+    img, label = dataset[random.randint(0, len(dataset) - 1)]
     img = img[0]
     img = torch.FloatTensor(img).to(device)
     img = img.unsqueeze(0)
     with torch.no_grad():
         embedding = encoder(img)
-    return embedding, img.shape[-1]
+    return embedding, img.shape[-1], img, label[0]
 
+def put_string(string, rows, cols, window, y_shift=0, x_shift=0):
+    for y, line in enumerate(string.splitlines()):
+        if y + y_shift >= rows:
+            break
+        window.addstr(y + y_shift, x_shift, line[:cols-x_shift-1])
 
 if __name__ in {"__main__", "__console__"}:
     args = get_args()
