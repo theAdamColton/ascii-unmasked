@@ -97,6 +97,21 @@ class VQ_VAE(pl.LightningModule):
 #        )
         return x_hat, z_e_x, z_q_x_st, z_q_x
 
+    def get_indeces_from_continuous(self, z_e_x):
+        """
+        discretizes based on the embedding space
+        """
+        return self.vq_embedding(z_e_x)
+
+    def decode_from_z_e_x(self, z_e_x, x_res=None):
+        """
+        decodes from undiscretized latent z_e_x
+        returns x_hat, z_q_x_st, z_q_z
+        """
+        z_q_st, z_q_z = self.vq_embedding.straight_through(z_e_x)
+        x_hat = self.decoder(z_q_st, x_res=x_res)
+        return x_hat, z_q_st, z_q_z
+
     def encode(self, x):
         x = x.squeeze(0)
         z_e_x = self.encoder(x)

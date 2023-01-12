@@ -14,6 +14,8 @@ import curses
 import time
 import sys
 import bpdb
+import numpy as np
+import tabulate
 
 dirname = path.dirname(__file__)
 sys.path.insert(0, path.join(dirname, "./ascii-dataset/"))
@@ -41,6 +43,8 @@ def get_args():
         type=float,
         help="Any number in [0,1], represents the smoothing between the different embeddings",
     )
+    parser.add_argument("--discrete-mode",dest="discrete_mode", default=True, action="store_false")
+    parser.add_argument("--show-latent",dest="show_latent", default=False, action="store_true")
     parser.add_argument(
         "--model-dir",
         dest="model_dir",
@@ -73,7 +77,9 @@ def main(stdscr, args):
 
     dataloader = DataLoader(
         dataset,
-        batch_size=1,
+        # This batch_size should be similar to what the 
+        # model was trained on for best results.
+        batch_size=42,
     )
 
     autoenc = VQ_VAE.load_from_checkpoint(
@@ -89,8 +95,6 @@ def main(stdscr, args):
     curses.curs_set(False)
     rows, cols = stdscr.getmaxyx()
     window = curses.newwin(rows, cols)
-
-    assert rows >= 64 and cols >= 64, "Terminal size needs to be at least 64x64"
 
     next_frame = time.time() + 1 / args.frame_rate
     embedding2, embedding2_input_shape, embedding2_input, embedding2_label = get_random(device, dataset, autoenc.encoder)
@@ -159,9 +163,6 @@ def main(stdscr, args):
             else:
                 embed_largest_trimmed = embed_largest
 
-            if not embed_largest_trimmed.shape == embed_smallest_padded.shape:
-                bpdb.set_trace()
-
             if embedding1.shape[-1] < embedding2.shape[-1]:
                 interp_embedding = (
                     x_scaled * embed_largest_trimmed + (1 - x) * embed_smallest_padded
@@ -177,9 +178,11 @@ def main(stdscr, args):
             else:
                 input_shape = int(input_shape_diff * x_scaled + embedding2_input_shape)
 
-            decoded = autoenc.decoder(interp_embedding, x_res=input_shape)
+            if args.discrete_mode:
+                decoded, z_q_st, _ = autoenc.decode_from_z_e_x(interp_embedding, x_res=input_shape)
+            else:
+                decoded = autoenc.decoder(interp_embedding, x_res=input_shape)
             decoded_str = ascii_util.one_hot_embedded_matrix_to_string(decoded[0])
-            # bpdb.set_trace()
 
             # Pad shift places the decoded_str in the middle of the pad, in the
             # middle of where the embed_largest_input_shape would be
@@ -192,7 +195,13 @@ def main(stdscr, args):
             put_string(embedding2_string, rows, cols, window, y_shift=embedding2_y_shift, x_shift=embedding2_x_shift)
 
             # Adds the label to below the embedding2_string
-            put_string(embedding2_label, rows, cols, window, y_shift=embedding2_y_shift+embedding2_input_shape, x_shift=embedding2_x_shift-80)
+            put_string(embedding2_label, rows, cols, window, y_shift=embedding2_y_shift+embedding2_input_shape, x_shift=embedding2_x_shift)
+
+            # If discrete mode shows the latent space
+            if args.discrete_mode and args.show_latent:
+                latent_str = tabulate.tabulate(np.array(autoenc.get_indeces_from_continuous(z_q_st))[0])
+                put_string(latent_str, rows, cols, window, y_shift=0, x_shift=0)
+
             window.refresh()
 
         time.sleep(args.hold_length)
@@ -213,7 +222,10 @@ def put_string(string, rows, cols, window, y_shift=0, x_shift=0):
     for y, line in enumerate(string.splitlines()):
         if y + y_shift >= rows:
             break
-        window.addstr(y + y_shift, x_shift, line[:cols-x_shift-1])
+        try:
+            window.addstr(y + y_shift, x_shift, line[:cols-x_shift-1])
+        except:
+            pass
 
 if __name__ in {"__main__", "__console__"}:
     args = get_args()
