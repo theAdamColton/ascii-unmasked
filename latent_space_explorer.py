@@ -15,7 +15,6 @@ import time
 import sys
 import bpdb
 import numpy as np
-import tabulate
 
 dirname = path.dirname(__file__)
 sys.path.insert(0, path.join(dirname, "./ascii-dataset/"))
@@ -63,8 +62,12 @@ def get_args():
 
 @torch.no_grad()
 def main(stdscr, args):
+    if not curses.can_change_color():
+        raise Exception('Cannot change color')
+
+
     dataset = AsciiArtDataset(
-        res=64, ragged_batch_bin=True, ragged_batch_bin_batch_size=1
+        res=100, ragged_batch_bin=True, ragged_batch_bin_batch_size=1
     )
 
     cuda = args.cuda
@@ -87,6 +90,9 @@ def main(stdscr, args):
         device=device,
     )
 
+    # the k value
+    n_z_latents = autoenc.vq_k
+
     autoenc.eval()
     if cuda:
         autoenc.cuda()
@@ -95,6 +101,16 @@ def main(stdscr, args):
     curses.curs_set(False)
     rows, cols = stdscr.getmaxyx()
     window = curses.newwin(rows, cols)
+
+    # Initializes color
+    curses.init_color(curses.COLOR_WHITE, 1, 1, 1)
+    curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLACK)
+    for i in range(1, 256):
+        greyscale = int(1000 * i / 255)
+        curses.init_color(i, greyscale, greyscale, greyscale)
+        curses.init_pair(i, i, 255)
+
+    window.bkgd(' ', curses.color_pair(1) | curses.A_BOLD)
 
     next_frame = time.time() + 1 / args.frame_rate
     embedding2, embedding2_input_shape, embedding2_input, embedding2_label = get_random(device, dataset, autoenc.encoder)
@@ -199,8 +215,16 @@ def main(stdscr, args):
 
             # If discrete mode shows the latent space
             if args.discrete_mode and args.show_latent:
-                latent_str = tabulate.tabulate(np.array(autoenc.get_indeces_from_continuous(z_q_st))[0])
-                put_string(latent_str, rows, cols, window, y_shift=0, x_shift=0)
+                indeces = autoenc.get_indeces_from_continuous(z_q_st)[0]
+
+                for y, row in enumerate(indeces):
+                    x = 0
+                    for entry in row:
+                        color = int((float(entry) / n_z_latents) * 256)
+                        color = color % 255 + 1
+                        s_ent = "{:<4}".format(str(int(entry)))
+                        put_string(s_ent, rows, cols, window, y_shift=y, x_shift=x, color=color)
+                        x += len(s_ent)
 
             window.refresh()
 
@@ -218,12 +242,12 @@ def get_random(device, dataset, encoder):
         embedding = encoder(img)
     return embedding, img.shape[-1], img, label[0]
 
-def put_string(string, rows, cols, window, y_shift=0, x_shift=0):
+def put_string(string, rows, cols, window, y_shift=0, x_shift=0, color=1):
     for y, line in enumerate(string.splitlines()):
         if y + y_shift >= rows:
             break
         try:
-            window.addstr(y + y_shift, x_shift, line[:cols-x_shift-1])
+            window.addstr(y + y_shift, x_shift, line[:cols-x_shift-1], curses.color_pair(color))
         except:
             pass
 
