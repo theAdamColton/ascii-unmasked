@@ -49,6 +49,7 @@ def get_args():
             "models/autoenc_vanilla_deep_cnn_one_hot_64_with_noise",
         ),
     )
+    parser.add_argument("--interp-mode", dest="interp_mode", default="zero")
     parser.add_argument(
         "--cuda",
         dest="cuda",
@@ -126,93 +127,37 @@ def main(stdscr, args):
     window.bkgd(' ', curses.color_pair(1) | curses.A_BOLD)
 
     next_frame = time.time() + 1 / args.frame_rate
+
     embedding2, embedding2_input_shape, embedding2_input, embedding2_label = get_random(device, dataset, autoenc.encoder)
 
     while True:
-        embedding1, embedding1_input_shape, embedding1_input = embedding2, embedding2_input_shape, embedding2_input
+        embedding1, embedding1_input_shape, _ = embedding2, embedding2_input_shape, embedding2_input
         embedding2, embedding2_input_shape, embedding2_input, embedding2_label = get_random(
             device, dataset, autoenc.encoder
         )
         embedding2_string = ascii_util.one_hot_embedded_matrix_to_string(embedding2_input.squeeze(0))
 
-        if embedding2.shape[-1] > embedding1.shape[-1]:
-            embed_smallest = embedding1
-            embed_largest = embedding2
-            embed_smallest_shape = embedding1.shape[-1]
-            embed_largest_shape = embedding2.shape[-1]
-            embed_largest_input_shape = embedding2_input_shape
-        else:
-            embed_smallest = embedding2
-            embed_largest = embedding1
-            embed_smallest_shape = embedding2.shape[-1]
-            embed_largest_shape = embedding1.shape[-1]
-            embed_largest_input_shape = embedding1_input_shape
-
-        embed_shape_diff = abs(embedding1.shape[-1] - embedding2.shape[-1])
-        input_shape_diff = abs(embedding1_input_shape - embedding2_input_shape)
-
-        """
-        embedding1_shape and embedding2_shape might be different.
-        How we handle that:
-            * The dimensions of the interpolated embedding will linearly
-            interpolate between the integer steps between the integer sizes of
-            the two embeddings.
-
-            * The rendered intermediate output will be padded with space
-            characters to be in the center.
-        """
-
         for x in np.linspace(0, 1, args.steps):
-
             while time.time() < next_frame:
                 pass
-
             next_frame = time.time() + 1 / args.frame_rate
 
-            x_scaled = np.log10(x**args.smooth_factor + 1) * 3.322
-            # interpolated embedding shape
-            embed_shape = int(embed_smallest_shape + round(embed_shape_diff * x_scaled))
-            padding = embed_shape - embed_smallest_shape
-            trimming = embed_largest_shape - embed_shape
-            embed_smallest_padded = F.pad(
-                embed_smallest,
-                (
-                    padding // 2,
-                    padding - padding // 2,
-                    padding // 2,
-                    padding - padding // 2,
-                ),
-            )
-            if trimming != 0:
-                embed_largest_trimmed = embed_largest[
-                    :,
-                    :,
-                    trimming // 2 : -(trimming - trimming // 2),
-                    trimming // 2 : -(trimming - trimming // 2),
-                ]
-            else:
-                embed_largest_trimmed = embed_largest
 
-            if embedding1.shape[-1] < embedding2.shape[-1]:
-                interp_embedding = (
-                    x_scaled * embed_largest_trimmed + (1 - x) * embed_smallest_padded
-                )
-            else:
-                interp_embedding = (
-                    x_scaled * embed_smallest_padded + (1 - x) * embed_largest_trimmed
-                )
+            #x_scaled = np.log10(x**args.smooth_factor + 1) * 3.322
+            x_scaled = x
+
+            interp_embedding = get_interp(embedding1, embedding2, x_scaled, interp_mode=args.interp_mode)
 
             # interpolated encoder input shape
-            if embedding1.shape[-1] < embedding2.shape[-1]:
-                input_shape = int(input_shape_diff * x_scaled + embedding1_input_shape)
-            else:
-                input_shape = int(input_shape_diff * x_scaled + embedding2_input_shape)
+            input_shape = int(lerp(embedding1_input_shape, embedding2_input_shape, x_scaled))
 
             if args.discrete_mode:
                 decoded, z_q_st, _ = autoenc.decode_from_z_e_x(interp_embedding, x_res=input_shape)
             else:
                 decoded = autoenc.decoder(interp_embedding, x_res=input_shape)
             decoded_str = ascii_util.one_hot_embedded_matrix_to_string(decoded[0])
+
+            window.erase()
 
             # Pad shift places the decoded_str in the middle of the pad, in the
             # middle of where the embed_largest_input_shape would be
@@ -221,7 +166,7 @@ def main(stdscr, args):
 
             # Adds the original embedding2 to the right
             embedding2_y_shift = (min(rows,cols) - embedding2_input_shape)//2
-            embedding2_x_shift = cols-embedding2_input_shape - 30
+            embedding2_x_shift = cols-embedding2_input_shape - 10
             put_string(embedding2_string, rows, cols, window, y_shift=embedding2_y_shift+y_shift, x_shift=embedding2_x_shift)
 
             # Adds the label to below the embedding2_string
@@ -243,11 +188,66 @@ def main(stdscr, args):
                 y=0
 
             put_string(decoded_str, rows, cols, window, y_shift=pad_shift//2 + y_shift, x_shift=pad_shift//2, min_row=y+1)
-            #put_string(decoded_str, rows, cols, window, y_shift=0, x_shift=0, min_row=y+2)
             window.refresh()
 
         time.sleep(args.hold_length)
         window.clear()
+
+def lerp(z, y, x):
+    """
+    Lin interp between z and y, with weight x
+    """
+    return z + x * (y - z) 
+
+def __trim(e, trim_amount):
+    if trim_amount > 0:
+        return e[:, :, trim_amount//2: - (trim_amount - trim_amount//2), trim_amount//2: - (trim_amount - trim_amount//2)]
+    else:
+        return e
+
+def __pad(e, pad_amount):
+    return F.pad(e, (pad_amount//2,  pad_amount - pad_amount//2, pad_amount//2,  pad_amount - pad_amount//2,))
+
+def get_interp(e1: torch.Tensor, e2: torch.Tensor, x: float, interp_mode = "stretch"):
+    """
+    Interpolates linearly between possibly differently shaped square e1 and e2.
+    e1 and e2 are 4d with the last two dimensions being square and first two dimensions,
+    being the same between them.
+
+    x is in [0, 1]
+
+    if interp_mode is "stretch", then the embeddings will be interpolated into matching shapes
+    if interp_mode is "zero", then the embeddings will be padded with zeros or
+        trucated into matching shapes
+    """
+    e1_res = e1.shape[-1]
+    e2_res = e2.shape[-1]
+    interp_res = round(lerp(e1_res, e2_res, x))
+
+    if interp_mode=="stretch":
+        mode="nearest"
+        e1_interp = F.interpolate(e1, (interp_res, interp_res), mode=mode)
+        e2_interp = F.interpolate(e2, (interp_res, interp_res), mode=mode)
+    elif interp_mode=="zero":
+        if e1_res < interp_res:
+            pad_amount = interp_res - e1_res
+            e1_interp = __pad(e1, pad_amount)
+            trim_amount = e2_res - interp_res
+            e2_interp = __trim(e2, trim_amount)
+
+        elif e1_res > interp_res:
+            trim_amount = e1_res - interp_res
+            e1_interp = __trim(e1, trim_amount)
+            pad_amount = interp_res - e2_res
+            e2_interp = __pad(e2, pad_amount)
+        else:
+            e1_interp = e1
+            pad_amount = interp_res - e2_res
+            e2_interp = __pad(e2, pad_amount)
+    else:
+        raise Exception("wrong interp mode")
+
+    return lerp(e1_interp, e2_interp, x)
 
 
 def get_random(device, dataset, encoder):
