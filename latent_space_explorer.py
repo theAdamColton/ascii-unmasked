@@ -1,9 +1,7 @@
 """
 Traverses the latent space
-Make sure that your terminal is large enough, or curses will throw an error
 """
 import random
-import math
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -13,7 +11,6 @@ from os import path
 import curses
 import time
 import sys
-import bpdb
 import numpy as np
 
 dirname = path.dirname(__file__)
@@ -33,8 +30,8 @@ def get_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-f", "--frame-rate", dest="frame_rate", type=float, default=60)
-    parser.add_argument("--steps", dest="steps", type=int, default=200)
-    parser.add_argument("--hold-length", dest="hold_length", default=2, type=float)
+    parser.add_argument("--steps", dest="steps", type=int, default=100)
+    parser.add_argument("--hold-length", dest="hold_length", default=1, type=float)
     parser.add_argument(
         "--smooth-factor",
         dest="smooth_factor",
@@ -66,8 +63,10 @@ def main(stdscr, args):
         raise Exception('Cannot change color')
 
 
+    batch_size = 1
+
     dataset = AsciiArtDataset(
-        res=100, ragged_batch_bin=True, ragged_batch_bin_batch_size=1
+        res=100, ragged_batch_bin=True, ragged_batch_bin_batch_size=batch_size
     )
 
     cuda = args.cuda
@@ -82,7 +81,7 @@ def main(stdscr, args):
         dataset,
         # This batch_size should be similar to what the 
         # model was trained on for best results.
-        batch_size=42,
+        batch_size=batch_size,
     )
 
     autoenc = VQ_VAE.load_from_checkpoint(
@@ -103,17 +102,32 @@ def main(stdscr, args):
     window = curses.newwin(rows, cols)
 
     # Initializes color
-    curses.init_color(curses.COLOR_WHITE, 1, 1, 1)
-    curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLACK)
-    for i in range(1, 256):
+    # The color pair 1 is black on white
+
+    # The color 1 is the background color of the 
+    # Latent space vis
+
+    # The color pair i=2-255 is a gradient
+    # From color i to color 1
+    curses.init_color(1, 100, 50, 1)
+    curses.init_pair(1, 2, 255)
+    # Threshold for when to make the foreground text light colored
+    thresh = 200
+    lightness_diff = 30
+    for i in range(2, 256):
         greyscale = int(1000 * i / 255)
         curses.init_color(i, greyscale, greyscale, greyscale)
-        curses.init_pair(i, i, 255)
+        if i < thresh:
+            foreground = i + lightness_diff
+        else:
+            foreground = i - lightness_diff
+        curses.init_pair(i, foreground, i)
 
     window.bkgd(' ', curses.color_pair(1) | curses.A_BOLD)
 
     next_frame = time.time() + 1 / args.frame_rate
     embedding2, embedding2_input_shape, embedding2_input, embedding2_label = get_random(device, dataset, autoenc.encoder)
+
     while True:
         embedding1, embedding1_input_shape, embedding1_input = embedding2, embedding2_input_shape, embedding2_input
         embedding2, embedding2_input_shape, embedding2_input, embedding2_label = get_random(
@@ -203,15 +217,15 @@ def main(stdscr, args):
             # Pad shift places the decoded_str in the middle of the pad, in the
             # middle of where the embed_largest_input_shape would be
             pad_shift = min(rows, cols) - input_shape
-            put_string(decoded_str, rows, cols, window, y_shift=pad_shift//2, x_shift=pad_shift//2)
+            y_shift = 10
 
             # Adds the original embedding2 to the right
             embedding2_y_shift = (min(rows,cols) - embedding2_input_shape)//2
             embedding2_x_shift = cols-embedding2_input_shape - 30
-            put_string(embedding2_string, rows, cols, window, y_shift=embedding2_y_shift, x_shift=embedding2_x_shift)
+            put_string(embedding2_string, rows, cols, window, y_shift=embedding2_y_shift+y_shift, x_shift=embedding2_x_shift)
 
             # Adds the label to below the embedding2_string
-            put_string(embedding2_label, rows, cols, window, y_shift=embedding2_y_shift+embedding2_input_shape, x_shift=embedding2_x_shift)
+            put_string(embedding2_label, rows, cols, window, y_shift=0, x_shift=embedding2_x_shift)
 
             # If discrete mode shows the latent space
             if args.discrete_mode and args.show_latent:
@@ -221,11 +235,15 @@ def main(stdscr, args):
                     x = 0
                     for entry in row:
                         color = int((float(entry) / n_z_latents) * 256)
-                        color = color % 255 + 1
+                        color = color % 254 + 2
                         s_ent = "{:<4}".format(str(int(entry)))
                         put_string(s_ent, rows, cols, window, y_shift=y, x_shift=x, color=color)
                         x += len(s_ent)
+            else:
+                y=0
 
+            put_string(decoded_str, rows, cols, window, y_shift=pad_shift//2 + y_shift, x_shift=pad_shift//2, min_row=y+1)
+            #put_string(decoded_str, rows, cols, window, y_shift=0, x_shift=0, min_row=y+2)
             window.refresh()
 
         time.sleep(args.hold_length)
@@ -233,23 +251,37 @@ def main(stdscr, args):
 
 
 def get_random(device, dataset, encoder):
-    """returns random embedding, and the shape of the input, input"""
-    img, label = dataset[random.randint(0, len(dataset) - 1)]
-    img = img[0]
+    """returns random embedding, and the shape of the input, input
+        doesn't return any dataset items with the word "sex" in it's label
+    """
+    bad_labels = ["sex", "naked", "penis", "gun"]
+    good_label=False
+    while not good_label:
+        img, label = dataset[random.randint(0, len(dataset) - 1)]
+        img = img[0]
+        label = label[0]
+
+        found_bad = False
+        for bad_label in bad_labels:
+            if bad_label in label.lower():
+                found_bad = True
+                break
+        good_label = not found_bad
+
     img = torch.FloatTensor(img).to(device)
     img = img.unsqueeze(0)
     with torch.no_grad():
         embedding = encoder(img)
-    return embedding, img.shape[-1], img, label[0]
+    return embedding, img.shape[-1], img, label
 
-def put_string(string, rows, cols, window, y_shift=0, x_shift=0, color=1):
+def put_string(string, rows, cols, window, y_shift=0, x_shift=0, color=1, min_row=0):
+    x_shift = max(x_shift, 0)
     for y, line in enumerate(string.splitlines()):
         if y + y_shift >= rows:
             break
-        try:
-            window.addstr(y + y_shift, x_shift, line[:cols-x_shift-1], curses.color_pair(color))
-        except:
-            pass
+        if y + y_shift < min_row:
+            continue
+        window.addstr(y + y_shift, x_shift, line[:cols-x_shift-1], curses.color_pair(color))
 
 if __name__ in {"__main__", "__console__"}:
     args = get_args()
