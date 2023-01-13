@@ -23,7 +23,7 @@ from dataset import AsciiArtDataset
 import ascii_util
 
 from vqvae import VQ_VAE
-from transformer import VQGANTransformer
+from transformer import VQTransformer
 from augmentation import RandomRoll
 
 
@@ -99,24 +99,24 @@ def get_training_args():
 class MaskGitTrainer(pl.LightningModule):
     def __init__(
         self,
-        transformer: VQGANTransformer,
         vae: VQ_VAE,
         batch_size: int,
         should_random_roll=True,
-        max_res=105,
+        max_res=100,
         validation_prop=0.01,
         learning_rate=5e-4,
     ):
         super().__init__()
 
-        self.transformer = transformer
+        # TODO Hardcoded
+        self.transformer = VQTransformer(512, 20**2, vae)
         self.vae = vae
-        self.vae.eval()
+        if self.vae:
+            self.vae.eval()
         self.hparams.lr = learning_rate
         self.should_random_roll = should_random_roll
         self.validation_prop = validation_prop
         self.max_res = max_res
-        self.automatic_optimization = True
         self.batch_size = batch_size
 
         if self.should_random_roll:
@@ -125,7 +125,7 @@ class MaskGitTrainer(pl.LightningModule):
     def step(self, x, _):
         with torch.no_grad():
             indeces = self.vae.encode(x.to(self.vae.dtype))
-        logits, targets = self.transformer(indeces)
+        logits, targets, _ = self.transformer(indeces)
         logits = rearrange(logits, "b w c -> b c w")
 
         loss = F.cross_entropy(logits, targets)
@@ -241,17 +241,15 @@ if __name__ in {"__main__", "__console__"}:
         log_every_n_steps=10,
         precision=16,
         amp_backend="native",
-        accumulate_grad_batches=100,
+        accumulate_grad_batches=20,
     )
 
     vqvae = VQ_VAE.load_from_checkpoint(args.vq_vae_dir)
     vqvae.eval()
 
-    transformer = VQGANTransformer(512, 20**2, vqvae)
     # torchinfo.summary(maskgit, input_size=(7, 16, 16))
 
     maskgit_trainer = MaskGitTrainer(
-        transformer,
         vqvae,
         args.batch_size,
         learning_rate=args.learning_rate,

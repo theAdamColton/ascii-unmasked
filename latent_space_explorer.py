@@ -2,6 +2,7 @@
 Traverses the latent space
 """
 import random
+import math
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -24,14 +25,16 @@ sys.path.insert(0, path.join(dirname, "./python-pytorch-font-renderer/"))
 from font_renderer import ContinuousFontRenderer
 
 from vqvae import VQ_VAE
+from train_vqmaskgit import MaskGitTrainer
 
 
 def get_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-f", "--frame-rate", dest="frame_rate", type=float, default=60)
-    parser.add_argument("--steps", dest="steps", type=int, default=100)
-    parser.add_argument("--hold-length", dest="hold_length", default=1, type=float)
+    parser.add_argument("--steps", dest="steps", type=int, default=100, help="The number of steps between different encoded values")
+    parser.add_argument("--hold-length", dest="hold_length", default=1, type=float, help="Adjusts the amount of time spent paused during transitions")
+    parser.add_argument("--maskgit-r-prop", dest="maskgit_r_prop", default=0.8, type=float, help="One minus the expected propotion of latent values that will become masked")
     parser.add_argument(
         "--smooth-factor",
         dest="smooth_factor",
@@ -39,8 +42,9 @@ def get_args():
         type=float,
         help="Any number in [0,1], represents the smoothing between the different embeddings",
     )
-    parser.add_argument("--discrete-mode",dest="discrete_mode", default=True, action="store_false")
-    parser.add_argument("--show-latent",dest="show_latent", default=False, action="store_true")
+    parser.add_argument("--disable-discrete-mode",dest="disable_discrete_mode", default=False, action="store_true", help="Make the vq vae latent space non discretized")
+    parser.add_argument("--disable-masking",dest="disable_masking", default=False, action="store_true")
+    parser.add_argument("--transformer-model-dir", dest="transformer_model_dir")
     parser.add_argument(
         "--model-dir",
         dest="model_dir",
@@ -67,8 +71,7 @@ def main(stdscr, args):
         res=100, ragged_batch_bin=True, ragged_batch_bin_batch_size=batch_size
     )
 
-    cuda = args.cuda
-    if cuda:
+    if args.cuda:
         device = torch.device("cuda")
     else:
         device = torch.device("cpu")
@@ -87,11 +90,21 @@ def main(stdscr, args):
         device=device,
     )
 
+    if not args.disable_masking:
+        transformer = MaskGitTrainer.load_from_checkpoint(
+            args.transformer_model_dir,
+            device=device,
+            batch_size=1,
+            max_res=100,
+            validation_prop=0.0,
+            vae=autoenc,
+        )
+
     # the k value
     n_z_latents = autoenc.vq_k
 
     autoenc.eval()
-    if cuda:
+    if args.cuda:
         autoenc.cuda()
 
     curses.noecho()
@@ -100,28 +113,31 @@ def main(stdscr, args):
     window = curses.newwin(rows, cols)
 
     # Initializes color
-    # The color pair 1 is black on white
 
-    # The color 1 is the background color of the 
+    # The color 1 pair is the mask color of the 
     # Latent space vis
 
+    curses.init_color(1, 1000, 50, 1)
+    curses.init_pair(1, 3, 1)
+
+    # Color pair 2 is the ascii art color
+    curses.init_color(2, 1, 1, 1)
+    curses.init_pair(2, 2, 255)
+
     # The color pair i=2-255 is a gradient
-    # From color i to color 1
-    curses.init_color(1, 100, 50, 1)
-    curses.init_pair(1, 2, 255)
     # Threshold for when to make the foreground text light colored
     thresh = 200
     lightness_diff = 30
-    for i in range(2, 256):
+    for i in range(3, 256):
         greyscale = int(1000 * i / 255)
         curses.init_color(i, greyscale, greyscale, greyscale)
         if i < thresh:
-            foreground = i + lightness_diff
+            foreground = min(i + lightness_diff, 255)
         else:
-            foreground = i - lightness_diff
+            foreground = max(2, i - lightness_diff)
         curses.init_pair(i, foreground, i)
 
-    window.bkgd(' ', curses.color_pair(1) | curses.A_BOLD)
+    window.bkgd(' ', curses.color_pair(2) | curses.A_BOLD)
 
     next_frame = time.time() + 1 / args.frame_rate
 
@@ -140,15 +156,14 @@ def main(stdscr, args):
             next_frame = time.time() + 1 / args.frame_rate
 
 
-            #x_scaled = np.log10(x**args.smooth_factor + 1) * 3.322
-            x_scaled = x
+            x_scaled = np.log10(x**args.smooth_factor + 1) * 3.322
 
             interp_embedding = get_interp(embedding1, embedding2, x_scaled, interp_mode=args.interp_mode)
 
             # interpolated encoder input shape
             input_shape = int(lerp(embedding1_input_shape, embedding2_input_shape, x_scaled))
 
-            if args.discrete_mode:
+            if not args.disable_discrete_mode:
                 decoded, z_q_st, _ = autoenc.decode_from_z_e_x(interp_embedding, x_res=input_shape)
             else:
                 decoded = autoenc.decoder(interp_embedding, x_res=input_shape)
@@ -167,17 +182,9 @@ def main(stdscr, args):
             put_string(embedding2_label, rows, cols, window, y_shift=0, x_shift=embedding2_x_shift)
 
             # If discrete mode shows the latent space
-            if args.discrete_mode and args.show_latent:
+            if not args.disable_discrete_mode:
                 indeces = autoenc.get_indeces_from_continuous(z_q_st)[0]
-
-                for y, row in enumerate(indeces):
-                    x = 0
-                    for entry in row:
-                        color = int((float(entry) / n_z_latents) * 256)
-                        color = color % 254 + 2
-                        s_ent = "{:<4}".format(str(int(entry)))
-                        put_string(s_ent, rows, cols, window, y_shift=y, x_shift=x, color=color)
-                        x += len(s_ent)
+                y = draw_indeces(indeces, window, rows, cols, n_z_latents)
             else:
                 y=0
 
@@ -189,7 +196,56 @@ def main(stdscr, args):
             window.refresh()
 
         time.sleep(args.hold_length)
+
+        if not args.disable_masking and not args.disable_discrete_mode:
+            next_hold_until = time.time() + args.hold_length * 2
+            # takes the indeces, masks them, and then reconstructs them using the transformer model
+            logits, targets, a_indices = transformer.transformer(indeces.unsqueeze(0).reshape(1, -1), r=int(indeces.shape[-1]**2 *args.maskgit_r_prop))
+            # ignores the sos token
+            a_indices = a_indices[0,1:].reshape(indeces.shape[-1], indeces.shape[-1])
+            logits = logits.argmax(-1)
+            logits = logits[0,1:].reshape(indeces.shape[-1], indeces.shape[-1])
+            draw_indeces(a_indices, window, rows, cols, n_z_latents, mask_index = transformer.transformer.mask_token_id)
+            window.refresh()
+
+            while time.time() < next_hold_until:
+                pass
+            next_hold_until = time.time() + args.hold_length * 2
+
+            decoded = autoenc.decode_from_ids(logits.unsqueeze(0))
+            decoded_str = ascii_util.one_hot_embedded_matrix_to_string(decoded[0])
+            put_string(decoded_str, rows, cols, window, y_shift=pad_shift//2 + y_shift, x_shift=pad_shift//2, min_row=y+1)
+            draw_indeces(logits, window, rows, cols, n_z_latents, mask_index = transformer.transformer.mask_token_id)
+            window.refresh()
+
+            while time.time() < next_hold_until:
+                pass
+
+
+            
         window.clear()
+
+def draw_indeces(indeces, window, rows, cols, n_z_latents, mask_index=-1):
+    """
+    Returns the last y value drawn to
+
+    n_z_latents is the max value of indeces
+
+    mask_index is the index of the mask
+    """
+    for y, row in enumerate(indeces):
+        x = 0
+        for entry in row:
+            if bool(entry == mask_index):
+                color = 1
+            else:
+                color = int((entry / n_z_latents) * 256)
+                color = color % 254 + 2
+            s_ent = "{:<4}".format(str(int(entry)))
+            put_string(s_ent, rows, cols, window, y_shift=y, x_shift=x, color=color)
+            x += len(s_ent)
+    return y
+
 
 def lerp(z, y, x):
     """
@@ -272,7 +328,7 @@ def get_random(device, dataset, encoder):
         embedding = encoder(img)
     return embedding, img.shape[-1], img, label
 
-def put_string(string, rows, cols, window, y_shift=0, x_shift=0, color=1, min_row=0):
+def put_string(string, rows, cols, window, y_shift=0, x_shift=0, color=2, min_row=0):
     x_shift = max(x_shift, 0)
     for y, line in enumerate(string.splitlines()):
         if y + y_shift >= rows:

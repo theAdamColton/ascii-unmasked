@@ -12,12 +12,12 @@ import math
 from bidirectional_transformer import BidirectionalTransformer
 from vqvae import VQ_VAE
 
-_CONFIDENCE_OF_KNOWN_TOKENS = torch.Tensor([torch.inf]).to("cuda")
+_CONFIDENCE_OF_KNOWN_TOKENS = torch.Tensor([torch.inf])
 
 import bpdb
 
 
-class VQGANTransformer(nn.Module):
+class VQTransformer(nn.Module):
     def __init__(self, num_codebook_vectors: int, num_image_tokens: int, vqvae: VQ_VAE):
         super().__init__()
         self.num_image_tokens = num_image_tokens
@@ -33,15 +33,16 @@ class VQGANTransformer(nn.Module):
         )
         self.vqvae = vqvae
 
-    def forward(self, z_indices):
+    def forward(self, z_indices, r = None):
         z_indices = rearrange(z_indices, "b ... -> b (...)")
         # z_indices_one_hot
         sos_tokens = (
             torch.ones(z_indices.shape[0], 1, dtype=torch.long, device=z_indices.device)
             * self.sos_token
         )
-
-        r = math.floor(self.gamma(np.random.uniform()) * z_indices.shape[1])
+    
+        if r is None:
+            r = math.floor(self.gamma(np.random.uniform()) * z_indices.shape[1])
         sample = (
             torch.rand(z_indices.shape, device=z_indices.device).topk(r, dim=1).indices
         )
@@ -59,7 +60,7 @@ class VQGANTransformer(nn.Module):
 
         logits = self.transformer(a_indices)
 
-        return logits, target
+        return logits, target, a_indices
 
     def top_k_logits(self, logits, k):
         v, ix = torch.topk(logits, k)
@@ -106,7 +107,7 @@ class VQGANTransformer(nn.Module):
         return masking
 
     @torch.no_grad()
-    def sample_good(self, num_tokens, inputs=None, batch_size=1, T=11, mode="cosine"):
+    def sample_good(self, num_tokens, inputs=None, batch_size=1, T=11, mode="cosine", device=torch.device("cuda")):
         # self.transformer.eval()
         N = self.num_image_tokens
         if inputs is None:
@@ -117,7 +118,7 @@ class VQGANTransformer(nn.Module):
                     inputs,
                     torch.zeros(
                         (inputs.shape[0], N - inputs.shape[1]),
-                        device="cuda",
+                        device=device,
                         dtype=torch.int,
                     ).fill_(self.mask_token_id),
                 )
@@ -160,7 +161,7 @@ class VQGANTransformer(nn.Module):
             )  # get probability for selected tokens in categorical call, also for already sampled ones [8, 257]
 
             selected_probs = torch.where(
-                unknown_map, selected_probs, _CONFIDENCE_OF_KNOWN_TOKENS
+                unknown_map, selected_probs, _CONFIDENCE_OF_KNOWN_TOKENS.to(device)
             )  # ignore tokens which are already sampled [8, 257]
 
             mask_len = torch.unsqueeze(
