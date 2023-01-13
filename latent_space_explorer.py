@@ -44,10 +44,7 @@ def get_args():
     parser.add_argument(
         "--model-dir",
         dest="model_dir",
-        default=path.join(
-            path.dirname(__file__),
-            "models/autoenc_vanilla_deep_cnn_one_hot_64_with_noise",
-        ),
+        required=True,
     )
     parser.add_argument("--interp-mode", dest="interp_mode", default="zero")
     parser.add_argument(
