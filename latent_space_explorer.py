@@ -411,7 +411,7 @@ def get_random(device, dataset, encoder):
     """returns random embedding, and the shape of the input, input
     doesn't return any dataset items with the word "sex" in it's label
     """
-    bad_labels = ["sex", "naked", "penis", "gun"]
+    bad_labels = ["sex", "naked", "penis", "gun", "swimsuit"]
     good_label = False
     while not good_label:
         img, label = dataset[random.randint(0, len(dataset) - 1)]
