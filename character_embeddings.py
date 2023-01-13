@@ -13,7 +13,6 @@ from sklearn.decomposition import PCA
 import scipy
 from PIL import Image
 import os
-import bpdb
 
 import string_utils
 
@@ -56,8 +55,6 @@ def demonstration():
     if input("save embeddings?").startswith("y"):
         with open("./character_embeddings.npy", "wb") as f:
             np.save(f, embeddings_2d)
-
-    bpdb.set_trace()
 
 
 def generate_character_embeddings(n_components=12):
