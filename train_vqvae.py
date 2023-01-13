@@ -203,7 +203,6 @@ if __name__ in {"__main__", "__console__"}:
     )
 
     torchinfo.summary(vqvae.encoder, input_size=(7, 95, 64, 64))
-    # torchinfo.summary(vqvae.decoder, input_size=(7, args.vq_z_dim, 32, 32))
 
     if args.find_lr:
         lr_finder = trainer.tuner.lr_find(vqvae)
