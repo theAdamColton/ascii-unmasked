@@ -15,3 +15,11 @@ There are submodules used in the repo so you must do `git submodule init` and `g
 Follow instructions in the submodule ascii-dataset to gather the dataset and clean the files. Assuming the ascii files are in `./ascii-dataset/data_aggregation/data/**/*.txt`, you may train the autoencoder using `train_vqvae.py` the default arguments should be reasonable. Checkpoints will automatically be saved to `./ckpt/`. Note that some parameters such as the VQ Z dimension are hardcoded in the autoencoder architecture and cannot be changed from the command line without also adjusting the model in `autoencoder.py`.
 
 Once the autoencoder is trained, you may train the masked transformer model using `train_vqmask.py`. You will have to specify the path to the autoencoder ckpt file. 
+
+You can monitor the progress of the training using tensorboard.
+
+### Latent Space Explorer
+
+Latent Space Explorer in `latent_space_explorer.py` contains a cool visualization of what the latent space looks like, and how the masking effects the output image. 
+
+Video to come shortly...
