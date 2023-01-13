@@ -159,9 +159,6 @@ def main(stdscr, args):
 
             window.erase()
 
-            # Pad shift places the decoded_str in the middle of the pad, in the
-            # middle of where the embed_largest_input_shape would be
-            pad_shift = min(rows, cols) - input_shape
             y_shift = 10
 
             # Adds the original embedding2 to the right
@@ -186,6 +183,10 @@ def main(stdscr, args):
                         x += len(s_ent)
             else:
                 y=0
+
+            # Pad shift places the decoded_str in the middle of the pad, in the
+            # middle of where the embed_largest_input_shape would be
+            pad_shift = min(rows, cols) - input_shape
 
             put_string(decoded_str, rows, cols, window, y_shift=pad_shift//2 + y_shift, x_shift=pad_shift//2, min_row=y+1)
             window.refresh()
