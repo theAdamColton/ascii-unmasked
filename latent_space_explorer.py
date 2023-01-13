@@ -70,10 +70,10 @@ def get_args():
     parser.add_argument(
         "--disable-masking", dest="disable_masking", default=False, action="store_true"
     )
-    parser.add_argument("--transformer-model-dir", dest="transformer_model_dir")
+    parser.add_argument("--maskgit-dir", dest="maskgit_dir")
     parser.add_argument(
-        "--model-dir",
-        dest="model_dir",
+        "--vqvae-dir",
+        dest="vqvae_dir",
         required=True,
     )
     parser.add_argument("--interp-mode", dest="interp_mode", default="zero")
@@ -111,13 +111,13 @@ def main(stdscr, args):
     )
 
     autoenc = VQ_VAE.load_from_checkpoint(
-        args.model_dir,
+        args.vqvae_dir,
         device=device,
     )
 
     if not args.disable_masking:
         transformer = MaskGitTrainer.load_from_checkpoint(
-            args.transformer_model_dir,
+            args.maskgit_dir,
             device=device,
             batch_size=1,
             max_res=100,
