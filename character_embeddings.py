@@ -87,9 +87,10 @@ def generate_embedding_space_distances(n_components=12):
     to character j.
     """
     embeddings, _ = generate_character_embeddings(n_components=n_components)
-    
-    distances = scipy.spatial.distance.cdist(embeddings, embeddings, metric='euclidean')
+
+    distances = scipy.spatial.distance.cdist(embeddings, embeddings, metric="euclidean")
     return distances
+
 
 if __name__ in {"__main__", "__console__"}:
     if input("Create PCA plot?").startswith("y"):

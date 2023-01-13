@@ -1,6 +1,10 @@
 import torch
 import json
-from pytorch_lightning.callbacks import StochasticWeightAveraging, ModelCheckpoint, LearningRateMonitor
+from pytorch_lightning.callbacks import (
+    StochasticWeightAveraging,
+    ModelCheckpoint,
+    LearningRateMonitor,
+)
 from torch.utils.data import DataLoader
 import torchinfo
 import argparse
@@ -40,7 +44,10 @@ def get_training_args():
         "--ce-recon-loss-scale", dest="ce_recon_loss_scale", default=0.1, type=float
     )
     parser.add_argument(
-        "--ce-similarity-loss-coeff", dest="ce_similarity_loss_coeff", default=1.0, type=float
+        "--ce-similarity-loss-coeff",
+        dest="ce_similarity_loss_coeff",
+        default=1.0,
+        type=float,
     )
     parser.add_argument(
         "--ce-label-smoothing",
@@ -192,7 +199,11 @@ if __name__ in {"__main__", "__console__"}:
     trainer = pl.Trainer(
         max_epochs=args.n_epochs,
         accelerator="gpu" if device.type == "cuda" else "cpu",
-        callbacks=[StochasticWeightAveraging(swa_lrs=0.05), model_checkpoint, LearningRateMonitor()],
+        callbacks=[
+            StochasticWeightAveraging(swa_lrs=0.05),
+            model_checkpoint,
+            LearningRateMonitor(),
+        ],
         check_val_every_n_epoch=args.validation_every,
         auto_lr_find=True,
         logger=logger,

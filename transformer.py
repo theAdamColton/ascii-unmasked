@@ -33,14 +33,14 @@ class VQTransformer(nn.Module):
         )
         self.vqvae = vqvae
 
-    def forward(self, z_indices, r = None):
+    def forward(self, z_indices, r=None):
         z_indices = rearrange(z_indices, "b ... -> b (...)")
         # z_indices_one_hot
         sos_tokens = (
             torch.ones(z_indices.shape[0], 1, dtype=torch.long, device=z_indices.device)
             * self.sos_token
         )
-    
+
         if r is None:
             r = math.floor(self.gamma(np.random.uniform()) * z_indices.shape[1])
         sample = (
@@ -107,7 +107,15 @@ class VQTransformer(nn.Module):
         return masking
 
     @torch.no_grad()
-    def sample_good(self, num_tokens, inputs=None, batch_size=1, T=11, mode="cosine", device=torch.device("cuda")):
+    def sample_good(
+        self,
+        num_tokens,
+        inputs=None,
+        batch_size=1,
+        T=11,
+        mode="cosine",
+        device=torch.device("cuda"),
+    ):
         # self.transformer.eval()
         N = self.num_image_tokens
         if inputs is None:
